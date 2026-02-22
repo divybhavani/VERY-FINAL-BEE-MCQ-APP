@@ -1,0 +1,124 @@
+
+import React, { useState, useEffect } from 'react';
+import * as XLSX from 'xlsx';
+import { X, Table as TableIcon } from 'lucide-react';
+
+interface ExcelViewerProps {
+  fileUrl: string;
+  title: string;
+  onClose: () => void;
+  theme: any;
+}
+
+const ExcelViewer: React.FC<ExcelViewerProps> = ({ fileUrl, title, onClose, theme }) => {
+  const [data, setData] = useState<any[][]>([]);
+  const [sheets, setSheets] = useState<string[]>([]);
+  const [activeSheet, setActiveSheet] = useState(0);
+  const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadExcel = async () => {
+      try {
+        const response = await fetch(fileUrl);
+        const arrayBuffer = await response.arrayBuffer();
+        const wb = XLSX.read(arrayBuffer, { type: 'array' });
+        
+        setWorkbook(wb);
+        setSheets(wb.SheetNames);
+        
+        const firstSheetName = wb.SheetNames[0];
+        const worksheet = wb.Sheets[firstSheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+        
+        setData(jsonData);
+        setLoading(false);
+      } catch (error) {
+        console.error("Error loading Excel:", error);
+        setLoading(false);
+      }
+    };
+
+    loadExcel();
+  }, [fileUrl]);
+
+  const handleSheetChange = (index: number) => {
+    if (!workbook) return;
+    setActiveSheet(index);
+    const sheetName = sheets[index];
+    const worksheet = workbook.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+    setData(jsonData);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex flex-col">
+      <header className={`h-16 border-b ${theme.border} bg-slate-900/80 flex items-center justify-between px-6 shrink-0`}>
+        <div className="flex items-center gap-3">
+          <div className={`p-2 rounded-lg bg-white/5 ${theme.accent}`}>
+            <TableIcon className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-white font-bold text-sm uppercase tracking-wider">{title}</h3>
+            <p className="text-[10px] text-slate-500 font-mono">EXCEL SPREADSHEET VIEWER</p>
+          </div>
+        </div>
+        <button 
+          onClick={onClose}
+          className="p-2 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-all"
+        >
+          <X className="w-6 h-6" />
+        </button>
+      </header>
+
+      <div className="flex-1 overflow-auto p-6">
+        {loading ? (
+          <div className="h-full flex items-center justify-center">
+            <div className={`w-12 h-12 border-4 border-t-transparent ${theme.accent.replace('text-', 'border-')} rounded-full animate-spin`} />
+          </div>
+        ) : (
+          <div className="bg-slate-900/50 border border-white/5 rounded-2xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-black/40 border-b border-white/10">
+                    {data[0]?.map((cell, i) => (
+                      <th key={i} className="px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider border-r border-white/5">
+                        {String.fromCharCode(65 + i)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map((row, rowIndex) => (
+                    <tr key={rowIndex} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                      {row.map((cell, cellIndex) => (
+                        <td key={cellIndex} className="px-4 py-3 text-sm text-slate-300 border-r border-white/5 min-w-[120px]">
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <footer className="h-12 bg-black border-t border-white/10 flex items-center px-6 gap-2 shrink-0 overflow-x-auto">
+        {sheets.map((sheet, i) => (
+          <button
+            key={sheet}
+            onClick={() => handleSheetChange(i)}
+            className={`px-4 h-full text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 ${activeSheet === i ? `${theme.accent} border-current bg-white/5` : 'text-slate-500 border-transparent hover:text-slate-300'}`}
+          >
+            {sheet}
+          </button>
+        ))}
+      </footer>
+    </div>
+  );
+};
+
+export default ExcelViewer;
