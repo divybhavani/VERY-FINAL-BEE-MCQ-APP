@@ -9,11 +9,19 @@ const MKJDLandingPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-black text-white overflow-hidden selection:bg-emerald-500 selection:text-black">
-      {/* Animated Background */}
-      <div className="absolute inset-0 z-0">
+      {/* Video Background */}
+      <div className="absolute inset-0 z-0 overflow-hidden">
+        <video 
+          autoPlay 
+          loop 
+          muted 
+          playsInline 
+          className="absolute inset-0 w-full h-full object-cover opacity-40 scale-105"
+        >
+          <source src="https://assets.mixkit.co/videos/preview/mixkit-digital-animation-of-a-circuit-board-1544-large.mp4" type="video/mp4" />
+        </video>
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" />
         <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(16,185,129,0.1),transparent_50%)]" />
-        <div className="absolute top-[20%] right-[10%] w-96 h-96 bg-emerald-500/10 rounded-full blur-[120px] animate-pulse" />
-        <div className="absolute bottom-[10%] left-[5%] w-72 h-72 bg-blue-500/10 rounded-full blur-[100px]" />
       </div>
 
       {/* Grid Overlay */}

@@ -77,24 +77,28 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ fileUrl, title, onClose, them
             <div className={`w-12 h-12 border-4 border-t-transparent ${theme.accent.replace('text-', 'border-')} rounded-full animate-spin`} />
           </div>
         ) : (
-          <div className="bg-slate-900/50 border border-white/5 rounded-2xl overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+          <div className="bg-slate-900/50 border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left border-collapse min-w-full">
                 <thead>
-                  <tr className="bg-black/40 border-b border-white/10">
+                  <tr className="bg-black/60 border-b border-white/10">
+                    <th className="px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider border-r border-white/5 w-12 text-center">#</th>
                     {data[0]?.map((cell, i) => (
-                      <th key={i} className="px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider border-r border-white/5">
-                        {String.fromCharCode(65 + i)}
+                      <th key={i} className="px-6 py-4 text-[10px] font-mono text-emerald-500 uppercase tracking-widest border-r border-white/5 whitespace-nowrap">
+                        {String(cell || String.fromCharCode(65 + i))}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((row, rowIndex) => (
-                    <tr key={rowIndex} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                  {data.slice(1).map((row, rowIndex) => (
+                    <tr key={rowIndex} className="border-b border-white/5 hover:bg-white/10 transition-colors group">
+                      <td className="px-4 py-4 text-[10px] font-mono text-slate-600 border-r border-white/5 text-center bg-black/20">
+                        {rowIndex + 1}
+                      </td>
                       {row.map((cell, cellIndex) => (
-                        <td key={cellIndex} className="px-4 py-3 text-sm text-slate-300 border-r border-white/5 min-w-[120px]">
-                          {cell}
+                        <td key={cellIndex} className="px-6 py-4 text-sm text-slate-300 border-r border-white/5 min-w-[180px] max-w-[400px] break-words group-hover:text-white">
+                          {String(cell || '')}
                         </td>
                       ))}
                     </tr>

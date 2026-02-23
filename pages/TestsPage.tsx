@@ -69,28 +69,60 @@ const TestsPage: React.FC = () => {
           return;
         }
 
+        // Header Mapping Logic
+        const headers = (data[0] || []).map(h => String(h || '').trim().toLowerCase());
+        console.log("Detected Headers:", headers);
+
+        const findIndex = (possibleNames: string[]) => 
+          headers.findIndex(h => possibleNames.includes(h));
+
+        const mapping = {
+          question: findIndex(['question', 'q', 'text', 'question text']),
+          option_a: findIndex(['option a', 'a', 'option_a', 'choice a']),
+          option_b: findIndex(['option b', 'b', 'option_b', 'choice b']),
+          option_c: findIndex(['option c', 'c', 'option_c', 'choice c']),
+          option_d: findIndex(['option d', 'd', 'option_d', 'choice d']),
+          correct_answer: findIndex(['correct answer', 'answer', 'correct_answer', 'key', 'correct']),
+          bloom_level: findIndex(['blooms level', 'bloom level', 'bloom', 'blooms', 'level', 'bloom_level'])
+        };
+
+        console.log("Column Mapping:", mapping);
+
+        // Validation: Ensure required columns exist
+        const required = ['question', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_answer'];
+        const missing = required.filter(key => mapping[key as keyof typeof mapping] === -1);
+
+        if (missing.length > 0) {
+          alert(`Missing required columns: ${missing.join(', ')}. \nPlease ensure your Excel headers match these names.`);
+          return;
+        }
+
         const testId = Math.random().toString(36).substr(2, 9);
         const questions: Question[] = [];
 
-        // Skip header row (index 0)
+        // Process rows starting from index 1
         for (let i = 1; i < data.length; i++) {
           const row = data[i];
-          if (row.length < 6) continue; // Skip incomplete rows
+          if (!row || row.length === 0) continue;
+
+          const qText = String(row[mapping.question] || '').trim();
+          if (!qText) continue; // Skip rows with empty questions
 
           questions.push({
             id: Math.random().toString(36).substr(2, 9),
             testId,
-            question: String(row[0]),
-            optionA: String(row[1]),
-            optionB: String(row[2]),
-            optionC: String(row[3]),
-            optionD: String(row[4]),
-            correctAnswer: String(row[5]).toUpperCase().trim() as 'A' | 'B' | 'C' | 'D'
+            question: qText,
+            option_a: String(row[mapping.option_a] || '').trim(),
+            option_b: String(row[mapping.option_b] || '').trim(),
+            option_c: String(row[mapping.option_c] || '').trim(),
+            option_d: String(row[mapping.option_d] || '').trim(),
+            correct_answer: String(row[mapping.correct_answer] || '').toUpperCase().trim() as 'A' | 'B' | 'C' | 'D',
+            bloom_level: mapping.bloom_level !== -1 ? String(row[mapping.bloom_level] || '').trim() : 'N/A'
           });
         }
 
         if (questions.length === 0) {
-          alert("No valid questions found in the Excel file. Ensure columns are: Question, Option A, Option B, Option C, Option D, Correct Answer (A/B/C/D)");
+          alert("No valid questions found in the Excel file.");
           return;
         }
 
@@ -136,19 +168,19 @@ const TestsPage: React.FC = () => {
     let score = 0;
     const attempts = activeTest.questions.map(q => {
       const selected = answers[q.id] || '';
-      const isCorrect = selected === q.correctAnswer;
+      const isCorrect = selected === q.correct_answer;
       if (isCorrect) score++;
       return {
         questionId: q.id,
         questionText: q.question,
         selectedAnswer: selected,
-        correctAnswer: q.correctAnswer,
+        correctAnswer: q.correct_answer,
         isCorrect,
         options: {
-          A: q.optionA,
-          B: q.optionB,
-          C: q.optionC,
-          D: q.optionD
+          A: q.option_a,
+          B: q.option_b,
+          C: q.option_c,
+          D: q.option_d
         }
       };
     });
@@ -243,55 +275,78 @@ const TestsPage: React.FC = () => {
 
         <div className="space-y-6 mb-12">
           <h3 className="text-xl font-bold text-white px-4">Detailed Review</h3>
-          {showScore.attempts.map((attempt, idx) => (
-            <div key={attempt.questionId} className={`p-8 rounded-[32px] bg-slate-900/40 border ${attempt.isCorrect ? 'border-emerald-500/20' : 'border-rose-500/20'} space-y-6`}>
-              <div className="flex gap-4">
-                <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold border shrink-0 ${attempt.isCorrect ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
-                  {idx + 1}
-                </span>
-                <p className="text-lg text-white font-medium">{attempt.questionText}</p>
-              </div>
-              
-              <div className="grid sm:grid-cols-2 gap-4">
-                {Object.entries(attempt.options).map(([key, value]) => {
-                  const isSelected = attempt.selectedAnswer === key;
-                  const isCorrect = attempt.correctAnswer === key;
-                  
-                  let borderColor = 'border-slate-800';
-                  let bgColor = 'bg-transparent';
-                  let textColor = 'text-slate-400';
-                  
-                  if (isCorrect) {
-                    borderColor = 'border-emerald-500';
-                    bgColor = 'bg-emerald-500/10';
-                    textColor = 'text-emerald-400';
-                  } else if (isSelected && !isCorrect) {
-                    borderColor = 'border-rose-500';
-                    bgColor = 'bg-rose-500/10';
-                    textColor = 'text-rose-400';
-                  }
-
-                  return (
-                    <div key={key} className={`p-4 rounded-2xl border ${borderColor} ${bgColor} flex items-center gap-3`}>
-                      <span className={`w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-bold ${borderColor} ${textColor}`}>{key}</span>
-                      <span className={`text-sm ${textColor}`}>{value}</span>
-                      {isSelected && (
-                        <span className="ml-auto text-[10px] font-mono uppercase opacity-60">Your Choice</span>
-                      )}
+          {showScore.attempts.map((attempt, idx) => {
+            const currentTest = tests.find(t => t.id === showScore.testId);
+            const bloomLevel = currentTest?.questions.find(q => q.id === attempt.questionId)?.bloom_level || 'N/A';
+            
+            return (
+              <div key={attempt.questionId} className={`p-8 rounded-[32px] bg-slate-900/40 border ${attempt.isCorrect ? 'border-emerald-500/20' : 'border-rose-500/20'} transition-all`}>
+                <div className="flex flex-col md:flex-row gap-8">
+                  {/* Left Side: Question & Options (70%) */}
+                  <div className="flex-1 md:w-[70%] space-y-6">
+                    <div className="flex gap-4">
+                      <span className={`w-12 h-8 rounded-lg flex items-center justify-center text-xs font-bold border shrink-0 ${attempt.isCorrect ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
+                        Q{idx + 1}
+                      </span>
+                      <p className="text-lg text-white font-medium">{attempt.questionText}</p>
                     </div>
-                  );
-                })}
+                    
+                    <div className="space-y-3">
+                      {['A', 'B', 'C', 'D'].map(key => {
+                        const value = attempt.options[key as keyof typeof attempt.options];
+                        const isSelected = attempt.selectedAnswer === key;
+                        const isCorrect = attempt.correctAnswer === key;
+                        
+                        let borderColor = 'border-slate-800';
+                        let bgColor = 'bg-transparent';
+                        let textColor = 'text-slate-400';
+                        
+                        if (isCorrect) {
+                          borderColor = 'border-emerald-500';
+                          bgColor = 'bg-emerald-500/10';
+                          textColor = 'text-emerald-400';
+                        } else if (isSelected && !isCorrect) {
+                          borderColor = 'border-rose-500';
+                          bgColor = 'bg-rose-500/10';
+                          textColor = 'text-rose-400';
+                        }
+
+                        return (
+                          <div key={key} className={`p-4 rounded-2xl border ${borderColor} ${bgColor} flex items-center gap-4`}>
+                            <span className={`w-7 h-7 rounded-full border flex items-center justify-center text-xs font-bold ${borderColor} ${textColor}`}>{key}</span>
+                            <span className={`text-sm font-medium ${textColor}`}>{value}</span>
+                            {isSelected && (
+                              <span className="ml-auto text-[10px] font-mono uppercase opacity-60">Your Choice</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex flex-wrap gap-4 pt-4">
+                      <div className={`px-4 py-2 rounded-xl text-[10px] font-mono uppercase tracking-widest border ${attempt.isCorrect ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
+                        Your Answer: {attempt.selectedAnswer || 'None'}
+                      </div>
+                      <div className="px-4 py-2 rounded-xl text-[10px] font-mono uppercase tracking-widest border border-emerald-500/20 bg-emerald-500/10 text-emerald-400">
+                        Correct Answer: {attempt.correctAnswer}
+                      </div>
+                      <div className={`px-4 py-2 rounded-xl text-[10px] font-mono uppercase tracking-widest flex items-center gap-2 ${attempt.isCorrect ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                        {attempt.isCorrect ? '✅ Correct' : '❌ Incorrect'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Side: Bloom's Level (30%) */}
+                  <div className="md:w-[30%] flex flex-col items-center md:items-end justify-start pt-2">
+                    <div className={`px-4 py-2 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2 shadow-lg`}>
+                      <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Bloom:</span>
+                      <span className={`text-xs font-bold ${theme.accent}`}>{bloomLevel}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
-              
-              <div className={`px-6 py-3 rounded-xl text-xs font-mono uppercase tracking-widest flex items-center gap-2 ${attempt.isCorrect ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                {attempt.isCorrect ? (
-                  <><CheckCircle className="w-4 h-4" /> Correct Response</>
-                ) : (
-                  <><Trash2 className="w-4 h-4" /> Incorrect - Correct Answer was {attempt.correctAnswer}</>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <button 
@@ -316,28 +371,42 @@ const TestsPage: React.FC = () => {
 
         <div className="space-y-8">
           {activeTest.questions.map((q, idx) => (
-            <div key={q.id} className="p-8 rounded-[32px] bg-slate-900/40 border border-white/5 space-y-6">
-              <div className="flex gap-4">
-                <span className={`w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-xs font-bold ${theme.accent} border border-white/5 shrink-0`}>
-                  {idx + 1}
-                </span>
-                <p className="text-lg text-white font-medium">{q.question}</p>
-              </div>
-              <div className="grid sm:grid-cols-2 gap-4">
-                {['A', 'B', 'C', 'D'].map(opt => {
-                  const key = `option${opt}` as keyof Question;
-                  const isSelected = answers[q.id] === opt;
-                  return (
-                    <button
-                      key={opt}
-                      onClick={() => setAnswers(prev => ({ ...prev, [q.id]: opt }))}
-                      className={`p-4 rounded-2xl text-left border transition-all flex items-center gap-3 ${isSelected ? `bg-white/10 ${theme.border} ${theme.accent}` : 'bg-transparent border-slate-800 text-slate-400 hover:border-slate-600'}`}
-                    >
-                      <span className={`w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-bold ${isSelected ? `border-white/20 bg-white/10` : 'border-slate-700'}`}>{opt}</span>
-                      <span className="text-sm">{q[key] as string}</span>
-                    </button>
-                  );
-                })}
+            <div key={q.id} className="p-8 rounded-[32px] bg-slate-900/40 border border-white/5 hover:border-white/10 transition-all">
+              <div className="flex flex-col md:flex-row gap-8">
+                {/* Left Side: Question & Options (70%) */}
+                <div className="flex-1 md:w-[70%] space-y-6">
+                  <div className="flex gap-4">
+                    <span className={`w-12 h-8 rounded-lg bg-white/5 flex items-center justify-center text-xs font-bold ${theme.accent} border border-white/5 shrink-0`}>
+                      Q{idx + 1}
+                    </span>
+                    <p className="text-lg text-white font-medium">{q.question}</p>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    {['A', 'B', 'C', 'D'].map(opt => {
+                      const key = `option_${opt.toLowerCase()}` as keyof Question;
+                      const isSelected = answers[q.id] === opt;
+                      return (
+                        <button
+                          key={opt}
+                          onClick={() => setAnswers(prev => ({ ...prev, [q.id]: opt }))}
+                          className={`w-full p-4 rounded-2xl text-left border transition-all flex items-center gap-4 ${isSelected ? `bg-white/10 ${theme.border} ${theme.accent}` : 'bg-transparent border-slate-800 text-slate-400 hover:border-slate-600'}`}
+                        >
+                          <span className={`w-7 h-7 rounded-full border flex items-center justify-center text-xs font-bold ${isSelected ? `border-white/20 bg-white/10` : 'border-slate-700'}`}>{opt}</span>
+                          <span className="text-sm font-medium">{q[key] as string}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Right Side: Bloom's Level (30%) */}
+                <div className="md:w-[30%] flex flex-col items-center md:items-end justify-start pt-2">
+                  <div className={`px-4 py-2 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2 shadow-lg`}>
+                    <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Bloom:</span>
+                    <span className={`text-xs font-bold ${theme.accent}`}>{q.bloom_level || 'N/A'}</span>
+                  </div>
+                </div>
               </div>
             </div>
           ))}
