@@ -12,6 +12,7 @@ const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const [loginRole, setLoginRole] = useState<Role>(Role.STUDENT);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   // Student form
   const [name, setName] = useState('');
@@ -29,6 +30,7 @@ const LoginPage: React.FC = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsAuthenticating(true);
+    setError(null);
     
     try {
       let user: User;
@@ -36,11 +38,15 @@ const LoginPage: React.FC = () => {
       if (loginRole === Role.STUDENT) {
         if (!name || !roll) {
           setIsAuthenticating(false);
-          return alert("Please fill all fields");
+          setError("Please fill all fields");
+          return;
         }
         const formattedName = name.trim().charAt(0).toUpperCase() + name.trim().slice(1);
+        // Include subject in ID to prevent collisions between different modules
+        const studentId = `${selectedSubject}_${div}_${roll}`.toLowerCase();
+        
         user = {
-          id: `${div}_${roll}`,
+          id: studentId,
           name: formattedName,
           rollNumber: roll,
           division: div,
@@ -48,7 +54,19 @@ const LoginPage: React.FC = () => {
           role: Role.STUDENT,
           subject: selectedSubject
         };
-        await supabaseService.addUser(user);
+        
+        try {
+          await supabaseService.addUser(user);
+        } catch (dbError: any) {
+          console.error("Database sync failed:", dbError);
+          // If it's a network error or RLS error, we still let them in locally 
+          // so they can at least view notes, but warn them.
+          if (dbError.message?.includes('policy')) {
+            setError("Server sync restricted. Please contact Admin to enable 'users' table RLS policies.");
+            setIsAuthenticating(false);
+            return;
+          }
+        }
       } else {
         if (adminId.trim() === ADMIN_CREDENTIALS.id && password.trim() === ADMIN_CREDENTIALS.password) {
           user = {
@@ -65,7 +83,8 @@ const LoginPage: React.FC = () => {
           supabaseService.addUser(dbUser as User).catch(err => console.warn("Admin DB sync failed:", err));
         } else {
           setIsAuthenticating(false);
-          return alert("Invalid Admin Credentials");
+          setError("Invalid Admin Credentials");
+          return;
         }
       }
 
@@ -73,24 +92,24 @@ const LoginPage: React.FC = () => {
       navigate('/dashboard');
     } catch (error: any) {
       console.error("Login error:", error);
-      alert(`Authentication failed: ${error.message || 'Please check your connection.'}`);
+      setError(error.message || 'Authentication failed. Please check your connection.');
     } finally {
       setIsAuthenticating(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-center p-4">
-      <div className={`absolute top-0 w-full h-1 bg-gradient-to-r ${theme.primary} shadow-lg ${theme.glow}`} />
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center py-12 px-4 overflow-y-auto">
+      <div className={`fixed top-0 left-0 w-full h-1 bg-gradient-to-r ${theme.primary} shadow-lg ${theme.glow} z-[100]`} />
       
       <button 
         onClick={() => setSelectedSubject(null)}
-        className="absolute top-8 left-8 flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
+        className="absolute top-6 left-6 flex items-center gap-2 text-slate-400 hover:text-white transition-colors z-20"
       >
-        <ArrowLeft className="w-5 h-5" /> Back to Subject Select
+        <ArrowLeft className="w-5 h-5" /> <span className="text-xs uppercase font-bold tracking-widest hidden sm:inline">Back to Subject Select</span>
       </button>
 
-        <div className={`w-full max-w-md bg-slate-900/40 border ${theme.border} rounded-[32px] p-8 backdrop-blur-xl`}>
+      <div className={`w-full max-w-md bg-slate-900/40 border ${theme.border} rounded-[32px] p-8 backdrop-blur-xl relative z-10`}>
           <div className="flex flex-col items-center mb-8">
             <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${theme.primary} flex items-center justify-center mb-4`}>
               {loginRole === Role.STUDENT ? <UserCircle className="w-10 h-10 text-black" /> : <ShieldAlert className="w-10 h-10 text-black" />}
@@ -116,6 +135,11 @@ const LoginPage: React.FC = () => {
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
+          {error && (
+            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-mono text-center">
+              {error}
+            </div>
+          )}
           {loginRole === Role.STUDENT ? (
             <>
               <div>
@@ -132,10 +156,11 @@ const LoginPage: React.FC = () => {
                 <div>
                   <label className="block text-[10px] font-mono text-slate-400 uppercase mb-1 ml-1">Roll Number</label>
                   <input 
-                    type="number" 
+                    type="text" 
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     value={roll}
-                    onChange={(e) => setRoll(e.target.value)}
-                    min="1"
+                    onChange={(e) => setRoll(e.target.value.replace(/[^0-9]/g, ''))}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-slate-600 transition-colors"
                     placeholder="e.g. 1"
                   />

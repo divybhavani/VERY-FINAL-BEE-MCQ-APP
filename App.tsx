@@ -15,18 +15,48 @@ import StudentsPage from './pages/StudentsPage';
 import Layout from './components/Layout';
 
 const App: React.FC = () => {
-  const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
+  const [selectedSubject, setSelectedSubject] = useState<Subject | null>(() => {
+    try {
+      const saved = localStorage.getItem('spark_subject');
+      return saved ? saved as Subject : null;
+    } catch (error) {
+      return null;
+    }
+  });
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('spark_session');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem('spark_session');
+      return saved ? JSON.parse(saved) : null;
+    } catch (error) {
+      console.warn("LocalStorage access failed:", error);
+      return null;
+    }
   });
 
   useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem('spark_session', JSON.stringify(currentUser));
-      setSelectedSubject(currentUser.subject);
-    } else {
-      localStorage.removeItem('spark_session');
+    try {
+      if (selectedSubject) {
+        localStorage.setItem('spark_subject', selectedSubject);
+      } else {
+        localStorage.removeItem('spark_subject');
+      }
+    } catch (error) {
+      console.warn("Subject persistence failed:", error);
+    }
+  }, [selectedSubject]);
+
+  useEffect(() => {
+    try {
+      if (currentUser) {
+        localStorage.setItem('spark_session', JSON.stringify(currentUser));
+        if (currentUser.subject) {
+          setSelectedSubject(currentUser.subject);
+        }
+      } else {
+        localStorage.removeItem('spark_session');
+      }
+    } catch (error) {
+      console.warn("LocalStorage update failed:", error);
     }
   }, [currentUser]);
 
