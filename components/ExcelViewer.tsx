@@ -16,11 +16,18 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ fileUrl, title, onClose, them
   const [activeSheet, setActiveSheet] = useState(0);
   const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadExcel = async () => {
       try {
+        setError(null);
         const response = await fetch(fileUrl);
+        
+        if (!response.ok) {
+          throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+        }
+
         const arrayBuffer = await response.arrayBuffer();
         const wb = XLSX.read(arrayBuffer, { type: 'array' });
         
@@ -33,8 +40,9 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ fileUrl, title, onClose, them
         
         setData(jsonData);
         setLoading(false);
-      } catch (error) {
-        console.error("Error loading Excel:", error);
+      } catch (err: any) {
+        console.error("Error loading Excel:", err);
+        setError(err.message || "Failed to fetch file. This is likely a CORS issue in Supabase Storage.");
         setLoading(false);
       }
     };
@@ -75,6 +83,24 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ fileUrl, title, onClose, them
         {loading ? (
           <div className="h-full flex items-center justify-center">
             <div className={`w-12 h-12 border-4 border-t-transparent ${theme.accent.replace('text-', 'border-')} rounded-full animate-spin`} />
+          </div>
+        ) : error ? (
+          <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto">
+            <div className="p-6 rounded-3xl bg-rose-500/10 border border-rose-500/20 mb-6">
+              <X className="w-12 h-12 text-rose-500" />
+            </div>
+            <h4 className="text-white font-bold text-xl mb-2">PREVIEW FAILED</h4>
+            <p className="text-slate-400 text-sm mb-8 leading-relaxed">
+              The system could not fetch the file for preview. This is likely due to CORS restrictions in your Supabase Storage settings.
+            </p>
+            <div className="flex flex-col w-full gap-3">
+              <button 
+                onClick={onClose}
+                className={`w-full py-4 rounded-2xl font-bold text-sm shadow-xl transition-all flex items-center justify-center gap-2 ${theme.button}`}
+              >
+                CLOSE VIEWER
+              </button>
+            </div>
           </div>
         ) : (
           <div className="bg-slate-900/50 border border-white/5 rounded-2xl overflow-hidden shadow-2xl">

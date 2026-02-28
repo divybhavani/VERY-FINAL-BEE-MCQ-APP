@@ -11,6 +11,7 @@ const NotesPage: React.FC = () => {
   const { selectedSubject, currentUser } = useApp();
   const [docs, setDocs] = useState<AcademicNote[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [search, setSearch] = useState('');
   const [viewingExcel, setViewingExcel] = useState<AcademicNote | null>(null);
   const [deletingItem, setDeletingItem] = useState<AcademicNote | null>(null);
@@ -61,12 +62,18 @@ const NotesPage: React.FC = () => {
     if (!title) return alert("Enter document title");
     if (!file) return alert("Please select a file to upload");
     
+    setIsSubmitting(true);
+    
     try {
+      // 1. Upload file to Supabase Storage
+      const publicUrl = await supabaseService.uploadFile(file);
+
+      // 2. Create document record with the public URL
       const newDoc: AcademicNote = {
         id: Math.random().toString(36).substr(2, 9),
         title,
         type,
-        fileUrl: URL.createObjectURL(file), // Create a local URL for preview/download
+        fileUrl: publicUrl,
         subject: selectedSubject,
         division: uploadDivision,
         uploadedBy: currentUser.name,
@@ -90,9 +97,12 @@ const NotesPage: React.FC = () => {
       setTitle('');
       setFile(null);
       setIsUploading(false);
-    } catch (error) {
+      alert("Note uploaded successfully!");
+    } catch (error: any) {
       console.error("Upload error:", error);
-      alert("Failed to upload note.");
+      alert(`Failed to upload note: ${error.message || 'Check your storage bucket permissions.'}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -218,7 +228,13 @@ const NotesPage: React.FC = () => {
                   <p className="text-xs text-slate-500">Click to select PDF, PPT, DOC, or XLSX</p>
                 )}
               </div>
-              <button type="submit" className={`w-full py-4 rounded-xl font-bold mt-4 shadow-xl ${theme.button}`}>CONFIRM UPLOAD</button>
+              <button 
+                type="submit" 
+                disabled={isSubmitting}
+                className={`w-full py-4 rounded-xl font-bold mt-4 shadow-xl transition-all ${isSubmitting ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : theme.button}`}
+              >
+                {isSubmitting ? 'UPLOADING...' : 'CONFIRM UPLOAD'}
+              </button>
             </form>
           </div>
         </div>

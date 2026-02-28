@@ -68,9 +68,9 @@ export const supabaseService = {
       if (division && division !== 'ALL') {
         query = query.eq('division', division);
       }
-      const { error, count } = await query.select();
+      const { data, error } = await query.select();
       if (error) throw error;
-      return !!count && count > 0;
+      return !!data && data.length > 0;
     } catch (error) {
       logError('deleteDocument', error);
       return false;
@@ -113,9 +113,9 @@ export const supabaseService = {
       if (division && division !== 'ALL') {
         query = query.eq('division', division);
       }
-      const { error, count } = await query.select();
+      const { data, error } = await query.select();
       if (error) throw error;
-      return !!count && count > 0;
+      return !!data && data.length > 0;
     } catch (error) {
       logError('deleteTest', error);
       return false;
@@ -178,6 +178,30 @@ export const supabaseService = {
       if (error) throw error;
     } catch (error) {
       logError('addNotification', error);
+      throw error;
+    }
+  },
+
+  // Storage
+  async uploadFile(file: File, bucket: string = 'academic-assets'): Promise<string> {
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(bucket)
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(filePath);
+
+      return data.publicUrl;
+    } catch (error) {
+      logError('uploadFile', error);
       throw error;
     }
   }

@@ -62,67 +62,51 @@ const TestsPage: React.FC = () => {
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+        
+        // Use the requested sheet_to_json approach for cleaner mapping
+        const jsonData = XLSX.utils.sheet_to_json(ws, { defval: "" }) as any[];
 
-        if (data.length < 2) {
+        if (jsonData.length === 0) {
           alert("Excel file is empty or missing data rows.");
-          return;
-        }
-
-        // Header Mapping Logic
-        const headers = (data[0] || []).map(h => String(h || '').trim().toLowerCase());
-        console.log("Detected Headers:", headers);
-
-        const findIndex = (possibleNames: string[]) => 
-          headers.findIndex(h => possibleNames.includes(h));
-
-        const mapping = {
-          question: findIndex(['question', 'q', 'text', 'question text']),
-          option_a: findIndex(['option a', 'a', 'option_a', 'choice a']),
-          option_b: findIndex(['option b', 'b', 'option_b', 'choice b']),
-          option_c: findIndex(['option c', 'c', 'option_c', 'choice c']),
-          option_d: findIndex(['option d', 'd', 'option_d', 'choice d']),
-          correct_answer: findIndex(['correct answer', 'answer', 'correct_answer', 'key', 'correct']),
-          bloom_level: findIndex(['blooms level', 'bloom level', 'bloom', 'blooms', 'level', 'bloom_level'])
-        };
-
-        console.log("Column Mapping:", mapping);
-
-        // Validation: Ensure required columns exist
-        const required = ['question', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_answer'];
-        const missing = required.filter(key => mapping[key as keyof typeof mapping] === -1);
-
-        if (missing.length > 0) {
-          alert(`Missing required columns: ${missing.join(', ')}. \nPlease ensure your Excel headers match these names.`);
           return;
         }
 
         const testId = Math.random().toString(36).substr(2, 9);
         const questions: Question[] = [];
 
-        // Process rows starting from index 1
-        for (let i = 1; i < data.length; i++) {
-          const row = data[i];
-          if (!row || row.length === 0) continue;
+        // Helper to find value by case-insensitive header match
+        const getRowValue = (row: any, possibleHeaders: string[]) => {
+          const keys = Object.keys(row);
+          const normalizedPossible = possibleHeaders.map(h => h.toLowerCase().trim());
+          
+          for (const key of keys) {
+            const normalizedKey = key.toLowerCase().trim();
+            if (normalizedPossible.includes(normalizedKey)) {
+              return String(row[key] || '').trim();
+            }
+          }
+          return '';
+        };
 
-          const qText = String(row[mapping.question] || '').trim();
-          if (!qText) continue; // Skip rows with empty questions
+        jsonData.forEach((row) => {
+          const qText = getRowValue(row, ['Question', 'Q', 'Question Text']);
+          if (!qText) return;
 
           questions.push({
             id: Math.random().toString(36).substr(2, 9),
             testId,
             question: qText,
-            option_a: String(row[mapping.option_a] || '').trim(),
-            option_b: String(row[mapping.option_b] || '').trim(),
-            option_c: String(row[mapping.option_c] || '').trim(),
-            option_d: String(row[mapping.option_d] || '').trim(),
-            correct_answer: String(row[mapping.correct_answer] || '').toUpperCase().trim() as 'A' | 'B' | 'C' | 'D',
-            bloom_level: mapping.bloom_level !== -1 ? String(row[mapping.bloom_level] || '').trim() : 'N/A'
+            option_a: getRowValue(row, ['Option A', 'A', 'Choice A']),
+            option_b: getRowValue(row, ['Option B', 'B', 'Choice B']),
+            option_c: getRowValue(row, ['Option C', 'C', 'Choice C']),
+            option_d: getRowValue(row, ['Option D', 'D', 'Choice D']),
+            correct_answer: getRowValue(row, ['Correct Answer', 'Answer', 'Correct']).toUpperCase() as 'A' | 'B' | 'C' | 'D',
+            bloom_level: getRowValue(row, ["Bloom's Level", "Bloom's Le", "Blooms Level", "Bloom Level", "Level"]) || 'N/A'
           });
-        }
+        });
 
         if (questions.length === 0) {
-          alert("No valid questions found in the Excel file.");
+          alert("No valid questions found. Please check your Excel headers: Question, Option A, Option B, Option C, Option D, Correct Answer, Bloom's Le");
           return;
         }
 
@@ -165,6 +149,14 @@ const TestsPage: React.FC = () => {
 
   const submitTest = async () => {
     if (!activeTest) return;
+
+    // Check if all questions are answered
+    const unansweredCount = activeTest.questions.filter(q => !answers[q.id]).length;
+    if (unansweredCount > 0) {
+      alert(`Please answer all questions before submitting. You have ${unansweredCount} unanswered question(s) remaining.`);
+      return;
+    }
+
     let score = 0;
     const attempts = activeTest.questions.map(q => {
       const selected = answers[q.id] || '';
@@ -327,9 +319,11 @@ const TestsPage: React.FC = () => {
                       <div className={`px-4 py-2 rounded-xl text-[10px] font-mono uppercase tracking-widest border ${attempt.isCorrect ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
                         Your Answer: {attempt.selectedAnswer || 'None'}
                       </div>
-                      <div className="px-4 py-2 rounded-xl text-[10px] font-mono uppercase tracking-widest border border-emerald-500/20 bg-emerald-500/10 text-emerald-400">
-                        Correct Answer: {attempt.correctAnswer}
-                      </div>
+                      {currentUser.role === Role.ADMIN && (
+                        <div className="px-4 py-2 rounded-xl text-[10px] font-mono uppercase tracking-widest border border-emerald-500/20 bg-emerald-500/10 text-emerald-400">
+                          Correct Answer: {attempt.correctAnswer}
+                        </div>
+                      )}
                       <div className={`px-4 py-2 rounded-xl text-[10px] font-mono uppercase tracking-widest flex items-center gap-2 ${attempt.isCorrect ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
                         {attempt.isCorrect ? '✅ Correct' : '❌ Incorrect'}
                       </div>
@@ -412,12 +406,32 @@ const TestsPage: React.FC = () => {
           ))}
         </div>
 
-        <button 
-          onClick={submitTest}
-          className={`w-full py-5 rounded-3xl mt-12 font-black uppercase tracking-[0.2em] shadow-2xl transition-transform active:scale-95 ${theme.button}`}
-        >
-          Submit Final Answers
-        </button>
+        <div className="mt-12 space-y-4">
+          <div className="flex justify-between items-center px-4">
+            <span className="text-xs font-mono text-slate-500 uppercase tracking-widest">Progress</span>
+            <span className={`text-xs font-bold ${theme.accent}`}>
+              {activeTest.questions.filter(q => answers[q.id]).length} / {activeTest.questions.length} Answered
+            </span>
+          </div>
+          <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+            <div 
+              className={`h-full bg-gradient-to-r ${theme.primary} transition-all duration-500`}
+              style={{ width: `${(activeTest.questions.filter(q => answers[q.id]).length / activeTest.questions.length) * 100}%` }}
+            />
+          </div>
+          <button 
+            onClick={submitTest}
+            className={`w-full py-5 rounded-3xl font-black uppercase tracking-[0.2em] shadow-2xl transition-all active:scale-95 ${
+              activeTest.questions.every(q => answers[q.id]) 
+                ? theme.button 
+                : 'bg-slate-800 text-slate-500 border border-white/5 cursor-not-allowed opacity-80'
+            }`}
+          >
+            {activeTest.questions.every(q => answers[q.id]) 
+              ? 'Submit Final Answers' 
+              : `Complete ${activeTest.questions.length - activeTest.questions.filter(q => answers[q.id]).length} More to Submit`}
+          </button>
+        </div>
       </div>
     );
   }
