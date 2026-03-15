@@ -21,6 +21,7 @@ export interface User {
   rollNumber?: string;
   division?: Division;
   year: 'FY';
+  mobile_number?: string;
   role: Role;
   subject: Subject;
   adminId?: string;
@@ -29,7 +30,7 @@ export interface User {
 export interface AcademicNote {
   id: string;
   title: string;
-  type: 'PDF' | 'PPT' | 'DOC' | 'XLSX';
+  type: 'PDF' | 'PPT' | 'DOC' | 'XLSX' | 'IMAGE' | 'VIDEO';
   fileUrl: string;
   subject: Subject;
   division: Division | 'ALL';
@@ -56,7 +57,7 @@ export interface Test {
   division: Division | 'ALL';
   createdBy: string;
   questions: Question[];
-  totalQuestionsToAttempt?: number;
+  timeLimit?: number; // Time limit in minutes
   createdAt: number;
 }
 

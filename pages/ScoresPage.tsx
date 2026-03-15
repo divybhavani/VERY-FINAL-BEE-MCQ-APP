@@ -2,27 +2,35 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { THEMES } from '../constants';
-import { Search, BarChart3, UserCheck, History, Eye, CheckCircle, Trash2, ArrowLeft } from 'lucide-react';
+import { Search, BarChart3, UserCheck, History, Eye, CheckCircle, Trash2, ArrowLeft, Download } from 'lucide-react';
 import { supabaseService } from '../services/supabaseService';
-import { Result, Division, Role } from '../types';
+import { Result, Division, Role, User } from '../types';
 
 const ScoresPage: React.FC = () => {
   const { selectedSubject, currentUser } = useApp();
   const [results, setResults] = useState<Result[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [search, setSearch] = useState('');
   const [filterDiv, setFilterDiv] = useState<Division | 'ALL'>('ALL');
   const [viewingResult, setViewingResult] = useState<Result | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'analytics'>('list');
   const [selectedTestId, setSelectedTestId] = useState<string>('');
+  const [deletingResult, setDeletingResult] = useState<Result | null>(null);
+  const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [deleteStatus, setDeleteStatus] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
     const fetchResults = async () => {
       if (selectedSubject) {
         try {
-          const data = await supabaseService.getResults(selectedSubject);
+          const [data, usersData] = await Promise.all([
+            supabaseService.getResults(selectedSubject),
+            supabaseService.getUsers(selectedSubject)
+          ]);
           setResults(data);
+          setUsers(usersData);
         } catch (error) {
-          console.error("Error fetching results:", error);
+          console.error("Error fetching data:", error);
         }
       }
     };
@@ -47,6 +55,75 @@ const ScoresPage: React.FC = () => {
     
     return true; // Student sees all their own records
   });
+
+  const handleDeleteResult = async (id: string) => {
+    try {
+      const success = await supabaseService.deleteResult(id);
+      if (success) {
+        setDeleteStatus({ message: "Result deleted successfully.", type: 'success' });
+        setResults(prev => prev.filter(r => r.id !== id));
+      } else {
+        setDeleteStatus({ message: "Failed to delete result.", type: 'error' });
+      }
+    } catch (error) {
+      console.error("Delete error:", error);
+      setDeleteStatus({ message: "Failed to delete result.", type: 'error' });
+    }
+    setDeletingResult(null);
+    setTimeout(() => setDeleteStatus(null), 3000);
+  };
+
+  const handleDeleteUser = async (id: string) => {
+    try {
+      const success = await supabaseService.deleteUser(id);
+      if (success) {
+        setDeleteStatus({ message: "Student deleted successfully.", type: 'success' });
+        setUsers(prev => prev.filter(u => u.id !== id));
+        setResults(prev => prev.filter(r => r.studentId !== id));
+      } else {
+        setDeleteStatus({ message: "Failed to delete student.", type: 'error' });
+      }
+    } catch (error) {
+      console.error("Delete error:", error);
+      setDeleteStatus({ message: "Failed to delete student.", type: 'error' });
+    }
+    setDeletingUser(null);
+    setTimeout(() => setDeleteStatus(null), 3000);
+  };
+
+  const handleExportExcel = () => {
+    const headers = ['Roll Number', 'Name', 'Class', 'Test Title', 'Score', 'Total Questions', 'Percentage', 'Status', 'Submission Date', 'Submission Time'];
+    
+    const csvData = filteredResults.map(res => {
+      const perc = Math.round((res.score / res.totalQuestions) * 100);
+      const status = perc >= 40 ? 'Qualified' : 'Requires Review';
+      const date = new Date(res.submittedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      const time = new Date(res.submittedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      
+      return [
+        res.rollNumber,
+        `"${res.studentName}"`,
+        res.division,
+        `"${res.testTitle}"`,
+        res.score,
+        res.totalQuestions,
+        `${perc}%`,
+        status,
+        `"${date}"`,
+        `"${time}"`
+      ].join(',');
+    });
+
+    const csvString = [headers.join(','), ...csvData].join('\n');
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${selectedSubject}_Performance_Analytics.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   if (viewingResult) {
     return (
@@ -165,6 +242,14 @@ const ScoresPage: React.FC = () => {
               : `Review your past ${selectedSubject.toLowerCase()} module test results.`}
           </p>
         </div>
+        {isAdmin && (
+          <button
+            onClick={handleExportExcel}
+            className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold transition-all shadow-lg ${theme.button}`}
+          >
+            <Download className="w-5 h-5" /> EXPORT TO EXCEL
+          </button>
+        )}
       </div>
 
       {isAdmin && (
@@ -239,18 +324,21 @@ const ScoresPage: React.FC = () => {
         </div>
       )}
 
-      {viewMode === 'list' ? (
+      {(!isAdmin || viewMode === 'list') ? (
         <div className={`overflow-x-auto rounded-[32px] border ${theme.border} bg-slate-900/40 backdrop-blur-xl`}>
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-800">
-                <th className="px-8 py-6 text-[10px] font-mono text-slate-500 uppercase tracking-widest">
-                  {isAdmin ? 'Student Identity' : 'Submission Date'}
-                </th>
+                {isAdmin && (
+                  <th className="px-8 py-6 text-[10px] font-mono text-slate-500 uppercase tracking-widest">
+                    Student Identity
+                  </th>
+                )}
                 {isAdmin && <th className="px-8 py-6 text-[10px] font-mono text-slate-500 uppercase tracking-widest">Roll / Div</th>}
                 <th className="px-8 py-6 text-[10px] font-mono text-slate-500 uppercase tracking-widest">Test Title</th>
                 <th className="px-8 py-6 text-[10px] font-mono text-slate-500 uppercase tracking-widest">Raw Score</th>
                 <th className="px-8 py-6 text-[10px] font-mono text-slate-500 uppercase tracking-widest">Status</th>
+                <th className="px-8 py-6 text-[10px] font-mono text-slate-500 uppercase tracking-widest">Submitted At</th>
                 <th className="px-8 py-6 text-[10px] font-mono text-slate-500 uppercase tracking-widest">Action</th>
               </tr>
             </thead>
@@ -258,23 +346,37 @@ const ScoresPage: React.FC = () => {
               {filteredResults.sort((a, b) => b.submittedAt - a.submittedAt).map(res => {
                 const perc = Math.round((res.score / res.totalQuestions) * 100);
                 const date = new Date(res.submittedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                const time = new Date(res.submittedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
                 
                 return (
                   <tr key={res.id} className="hover:bg-white/5 transition-colors group">
-                    <td className="px-8 py-5">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-xs font-bold text-white`}>
-                          {isAdmin ? res.studentName[0] : <History className="w-4 h-4 text-slate-400" />}
+                    {isAdmin && (
+                      <td className="px-8 py-5">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-xs font-bold text-white`}>
+                            {res.studentName[0]}
+                          </div>
+                          <span className="text-sm font-medium text-white">{res.studentName}</span>
                         </div>
-                        <span className="text-sm font-medium text-white">{isAdmin ? res.studentName : date}</span>
-                      </div>
-                    </td>
+                      </td>
+                    )}
                     {isAdmin && (
                       <td className="px-8 py-5 text-sm font-mono text-slate-400">
                         <span className="text-white">#{res.rollNumber}</span> / {res.division}
                       </td>
                     )}
-                    <td className="px-8 py-5 text-sm text-slate-300">{res.testTitle}</td>
+                    <td className="px-8 py-5 text-sm text-slate-300">
+                      {!isAdmin ? (
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-xs font-bold text-white`}>
+                            <History className="w-4 h-4 text-slate-400" />
+                          </div>
+                          <span className="text-sm font-medium text-white">{res.testTitle}</span>
+                        </div>
+                      ) : (
+                        res.testTitle
+                      )}
+                    </td>
                     <td className="px-8 py-5">
                       <div className="flex items-center gap-2">
                         <span className={`text-lg font-bold ${theme.accent}`}>{res.score}</span>
@@ -293,13 +395,30 @@ const ScoresPage: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-8 py-5">
-                      <button 
-                        onClick={() => setViewingResult(res)}
-                        className={`p-2 rounded-lg bg-white/5 border border-white/10 ${theme.accent} hover:bg-white/10 transition-all`}
-                        title="Review Attempt"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
+                      <div className="flex flex-col">
+                        <span className="text-sm text-white">{date}</span>
+                        <span className="text-[10px] text-slate-500 font-mono mt-0.5">{time}</span>
+                      </div>
+                    </td>
+                    <td className="px-8 py-5">
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => setViewingResult(res)}
+                          className={`p-2 rounded-lg bg-white/5 border border-white/10 ${theme.accent} hover:bg-white/10 transition-all`}
+                          title="Review Attempt"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        {isAdmin && (
+                          <button 
+                            onClick={() => setDeletingResult(res)}
+                            className="p-2 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors border border-rose-500/20"
+                            title="Delete Result"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -315,7 +434,7 @@ const ScoresPage: React.FC = () => {
             </div>
           )}
         </div>
-      ) : (
+      ) : isAdmin ? (
         <div className={`overflow-x-auto rounded-[32px] border ${theme.border} bg-slate-900/40 backdrop-blur-xl p-8`}>
           {!selectedTestId ? (
             <div className="py-20 text-center">
@@ -376,8 +495,137 @@ const ScoresPage: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+
+              {/* Weaker Students & Not Attempted Sections */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+                {/* Weaker Students Section */}
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6">
+                  <h4 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5 text-rose-400" />
+                    Weaker Students (Score &lt; 40%)
+                  </h4>
+                  <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                    {(() => {
+                      const testResults = results.filter(r => r.testId === selectedTestId && (filterDiv === 'ALL' || r.division === filterDiv));
+                      const weakerStudents = testResults.filter(r => (r.score / r.totalQuestions) < 0.4).sort((a, b) => a.score - b.score);
+                      
+                      if (weakerStudents.length === 0) {
+                        return <p className="text-sm text-slate-500 font-mono">No weaker students found.</p>;
+                      }
+
+                      return weakerStudents.map(res => (
+                        <div key={res.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-800/50 border border-slate-700/50">
+                          <div>
+                            <p className="text-sm font-medium text-white">{res.studentName}</p>
+                            <p className="text-xs text-slate-400 font-mono">#{res.rollNumber} • {res.division}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-bold text-rose-400">{res.score}/{res.totalQuestions}</p>
+                            <p className="text-[10px] text-slate-500 uppercase font-mono">{Math.round((res.score / res.totalQuestions) * 100)}%</p>
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                </div>
+
+                {/* Not Attempted Section */}
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6">
+                  <h4 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <UserCheck className="w-5 h-5 text-slate-400" />
+                    Test Not Attempted
+                  </h4>
+                  <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                    {(() => {
+                      const testResults = results.filter(r => r.testId === selectedTestId && (filterDiv === 'ALL' || r.division === filterDiv));
+                      const attemptedStudentIds = new Set(testResults.map(r => r.studentId));
+                      const notAttemptedStudents = users.filter(u => 
+                        u.role === Role.STUDENT && 
+                        (filterDiv === 'ALL' || u.division === filterDiv) && 
+                        !attemptedStudentIds.has(u.id)
+                      ).sort((a, b) => a.name.localeCompare(b.name));
+
+                      if (notAttemptedStudents.length === 0) {
+                        return <p className="text-sm text-slate-500 font-mono">All students have attempted this test.</p>;
+                      }
+
+                      return notAttemptedStudents.map(student => (
+                        <div key={student.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-800/50 border border-slate-700/50">
+                          <div>
+                            <p className="text-sm font-medium text-white">{student.name}</p>
+                            <p className="text-xs text-slate-400 font-mono">#{student.rollNumber || 'N/A'} • {student.division}</p>
+                          </div>
+                          <button 
+                            onClick={() => setDeletingUser(student)}
+                            className="p-2 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors border border-rose-500/20"
+                            title="Delete Student"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
+        </div>
+      ) : null}
+
+      {deletingUser && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className={`w-full max-w-md bg-slate-900 border ${theme.border} rounded-[32px] p-8 shadow-2xl`}>
+            <h3 className="text-xl font-bold text-white mb-2">Delete Student</h3>
+            <p className="text-slate-400 text-sm mb-6">Are you sure you want to delete the student "{deletingUser.name}"? This will remove their account and all their results. This action cannot be undone.</p>
+            
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setDeletingUser(null)}
+                className="flex-1 py-3 rounded-xl font-bold bg-slate-800 text-white hover:bg-slate-700 transition-colors"
+              >
+                CANCEL
+              </button>
+              <button 
+                onClick={() => handleDeleteUser(deletingUser.id)}
+                className="flex-1 py-3 rounded-xl font-bold bg-rose-500 text-white hover:bg-rose-600 transition-colors"
+              >
+                DELETE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deletingResult && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className={`w-full max-w-md bg-slate-900 border ${theme.border} rounded-[32px] p-8 shadow-2xl`}>
+            <h3 className="text-xl font-bold text-white mb-2">Delete Result</h3>
+            <p className="text-slate-400 text-sm mb-6">Are you sure you want to delete the result for "{deletingResult.studentName}" on "{deletingResult.testTitle}"? This action cannot be undone.</p>
+            
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setDeletingResult(null)}
+                className="flex-1 py-3 rounded-xl font-bold bg-slate-800 text-white hover:bg-slate-700 transition-colors"
+              >
+                CANCEL
+              </button>
+              <button 
+                onClick={() => handleDeleteResult(deletingResult.id)}
+                className="flex-1 py-3 rounded-xl font-bold bg-rose-500 text-white hover:bg-rose-600 transition-colors"
+              >
+                DELETE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteStatus && (
+        <div className={`fixed bottom-6 right-6 px-6 py-4 rounded-2xl font-bold text-sm shadow-2xl animate-in slide-in-from-bottom-4 ${
+          deleteStatus.type === 'success' ? 'bg-emerald-500 text-black' : 'bg-rose-500 text-white'
+        }`}>
+          {deleteStatus.message}
         </div>
       )}
     </div>

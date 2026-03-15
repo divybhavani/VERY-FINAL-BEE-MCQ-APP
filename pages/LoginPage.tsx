@@ -6,9 +6,10 @@ import { Subject, Role, Division, User } from '../types';
 import { THEMES, ADMIN_CREDENTIALS } from '../constants';
 import { ArrowLeft, UserCircle, ShieldAlert } from 'lucide-react';
 import { supabaseService } from '../services/supabaseService';
+import { supabase } from '../services/supabase';
 
 const LoginPage: React.FC = () => {
-  const { selectedSubject, setSelectedSubject, setCurrentUser } = useApp();
+  const { selectedSubject, setSelectedSubject, currentUser, setCurrentUser } = useApp();
   const navigate = useNavigate();
   const [loginRole, setLoginRole] = useState<Role>(Role.STUDENT);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
@@ -18,6 +19,7 @@ const LoginPage: React.FC = () => {
   const [name, setName] = useState('');
   const [roll, setRoll] = useState('');
   const [div, setDiv] = useState<Division>(Division.LIN);
+  const [mobileNumber, setMobileNumber] = useState('');
 
   // Admin form
   const [adminId, setAdminId] = useState('');
@@ -36,36 +38,117 @@ const LoginPage: React.FC = () => {
       let user: User;
 
       if (loginRole === Role.STUDENT) {
-        if (!name || !roll) {
+        if (!name || !roll || !mobileNumber) {
           setIsAuthenticating(false);
           setError("Please fill all fields");
           return;
         }
+        if (mobileNumber.length !== 10) {
+          setIsAuthenticating(false);
+          setError("Mobile number must be exactly 10 digits");
+          return;
+        }
+
         const formattedName = name.trim().charAt(0).toUpperCase() + name.trim().slice(1);
-        // Include subject in ID to prevent collisions between different modules
-        const studentId = `${selectedSubject}_${div}_${roll}`.toLowerCase();
+        const trimmedRoll = roll.trim();
+        const formattedRoll = trimmedRoll.length === 1 && /^[0-9]$/.test(trimmedRoll) ? `0${trimmedRoll}` : trimmedRoll;
+        const studentId = `${selectedSubject}_${div}_${formattedRoll}`.toLowerCase();
         
-        user = {
-          id: studentId,
-          name: formattedName,
-          rollNumber: roll,
-          division: div,
-          year: 'FY',
-          role: Role.STUDENT,
-          subject: selectedSubject
-        };
-        
-        try {
-          await supabaseService.addUser(user);
-        } catch (dbError: any) {
-          console.error("Database sync failed:", dbError);
-          // If it's a network error or RLS error, we still let them in locally 
-          // so they can at least view notes, but warn them.
-          if (dbError.message?.includes('policy')) {
-            setError("Server sync restricted. Please contact Admin to enable 'users' table RLS policies.");
+        // 1. Check if this mobile number is already used by ANY student
+        const { data: mobileUsers, error: mobileError } = await supabase
+          .from('users')
+          .select('id, name')
+          .eq('mobile_number', mobileNumber)
+          .eq('role', 'STUDENT');
+          
+        const isMissingColumn = mobileError && (
+          (mobileError.message?.includes('mobile_number') && mobileError.message?.includes('schema cache')) ||
+          mobileError.message?.includes('column users.mobile_number does not exist') ||
+          mobileError.code === '42703'
+        );
+
+        if (mobileError && !isMissingColumn) {
+          setIsAuthenticating(false);
+          setError(`Database error: ${mobileError.message || JSON.stringify(mobileError)}`);
+          return;
+        }
+
+        // 2. Check if the exact student ID already exists
+        const { data: existingIdUsers, error: idError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', studentId)
+          .eq('role', 'STUDENT');
+
+        if (idError) {
+          setIsAuthenticating(false);
+          setError(`Database error: ${idError.message || JSON.stringify(idError)}`);
+          return;
+        }
+
+        const existingStudent = existingIdUsers && existingIdUsers.length > 0 ? existingIdUsers[0] : null;
+
+        if (existingStudent) {
+          // Student with this Roll Number and Division already exists
+          
+          // Check if name matches (case-insensitive)
+          if (existingStudent.name.toLowerCase() !== formattedName.toLowerCase()) {
             setIsAuthenticating(false);
+            setError(`Roll number ${formattedRoll} in division ${div} is already registered to a different name.`);
             return;
           }
+
+          // Check if mobile number matches
+          if (existingStudent.mobile_number) {
+            if (existingStudent.mobile_number !== mobileNumber) {
+              setIsAuthenticating(false);
+              setError("The mobile number provided does not match the one registered for this student.");
+              return;
+            }
+          } else {
+            // Mobile number is null in DB (old user). 
+            // Check if the provided mobile number is already taken by someone else
+            if (mobileUsers && mobileUsers.length > 0) {
+              const belongsToOther = mobileUsers.some(u => u.id !== studentId);
+              if (belongsToOther) {
+                setIsAuthenticating(false);
+                setError("This mobile number is already registered to another student.");
+                return;
+              }
+            }
+            
+            // Update the mobile number
+            existingStudent.mobile_number = mobileNumber;
+            supabaseService.addUser(existingStudent).catch(dbError => {
+              console.warn("Background sync failed:", dbError);
+            });
+          }
+          
+          user = existingStudent;
+        } else {
+          // New student registration
+          
+          // Check if mobile number is already taken
+          if (mobileUsers && mobileUsers.length > 0) {
+            setIsAuthenticating(false);
+            setError("This mobile number is already registered to another student.");
+            return;
+          }
+          
+          user = {
+            id: studentId,
+            name: formattedName,
+            rollNumber: formattedRoll,
+            division: div,
+            year: 'FY',
+            mobile_number: mobileNumber,
+            role: Role.STUDENT,
+            subject: selectedSubject
+          };
+          
+          supabaseService.addUser(user).catch(dbError => {
+            console.warn("Background sync failed:", dbError);
+          });
         }
       } else {
         if (adminId.trim() === ADMIN_CREDENTIALS.id && password.trim() === ADMIN_CREDENTIALS.password) {
@@ -89,12 +172,16 @@ const LoginPage: React.FC = () => {
       }
 
       setCurrentUser(user);
-      navigate('/dashboard');
+      
+      // Small delay to let React state settle and show success state
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 600);
     } catch (error: any) {
       console.error("Login error:", error);
       setError(error.message || 'Authentication failed. Please check your connection.');
     } finally {
-      setIsAuthenticating(false);
+      // Don't set isAuthenticating to false if we are navigating
     }
   };
 
@@ -150,6 +237,7 @@ const LoginPage: React.FC = () => {
                   onChange={(e) => setName(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-slate-600 transition-colors"
                   placeholder="Enter your name"
+                  required
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -163,29 +251,36 @@ const LoginPage: React.FC = () => {
                     onChange={(e) => setRoll(e.target.value.replace(/[^0-9]/g, ''))}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-slate-600 transition-colors"
                     placeholder="e.g. 1"
+                    required
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-mono text-slate-400 uppercase mb-1 ml-1">Year</label>
-                  <select disabled className="w-full bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-3 text-slate-400 text-sm cursor-not-allowed">
-                    <option>FY</option>
+                  <label className="block text-[10px] font-mono text-slate-400 uppercase mb-1 ml-1">Division</label>
+                  <select 
+                    value={div}
+                    onChange={(e) => setDiv(e.target.value as Division)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-slate-600 transition-colors appearance-none"
+                    required
+                  >
+                    {Object.values(Division).map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
                   </select>
                 </div>
               </div>
               <div>
-                <label className="block text-[10px] font-mono text-slate-400 uppercase mb-1 ml-1">Division</label>
-                <div className="flex gap-2">
-                  {Object.values(Division).map(d => (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() => setDiv(d)}
-                      className={`flex-1 py-2 rounded-lg border text-xs font-bold transition-all ${div === d ? `bg-white/10 ${theme.accent} border-white/20` : 'bg-transparent border-slate-800 text-slate-500'}`}
-                    >
-                      {d}
-                    </button>
-                  ))}
-                </div>
+                <label className="block text-[10px] font-mono text-slate-400 uppercase mb-1 ml-1">Mobile Number</label>
+                <input 
+                  type="tel" 
+                  inputMode="numeric"
+                  pattern="[0-9]{10}"
+                  maxLength={10}
+                  value={mobileNumber}
+                  onChange={(e) => setMobileNumber(e.target.value.replace(/[^0-9]/g, ''))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-slate-600 transition-colors"
+                  placeholder="10-digit mobile number"
+                  required
+                />
               </div>
             </>
           ) : (
@@ -216,9 +311,13 @@ const LoginPage: React.FC = () => {
           <button 
             type="submit"
             disabled={isAuthenticating}
-            className={`w-full py-4 mt-4 rounded-xl font-bold uppercase tracking-widest text-sm shadow-xl transition-all active:scale-95 ${isAuthenticating ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : theme.button}`}
+            className={`w-full py-4 mt-4 rounded-xl font-bold uppercase tracking-widest text-sm shadow-xl transition-all active:scale-95 ${
+              isAuthenticating 
+                ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
+                : (currentUser ? (selectedSubject === Subject.ELECTRONICS ? 'bg-emerald-500 text-black' : 'bg-yellow-400 text-black') : theme.button)
+            }`}
           >
-            {isAuthenticating ? 'Authenticating...' : 'Authenticate'}
+            {isAuthenticating ? 'Authenticating...' : 'AUTHENTICATE'}
           </button>
         </form>
       </div>

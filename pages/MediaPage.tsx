@@ -1,40 +1,38 @@
-
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { THEMES } from '../constants';
-import { FileText, Plus, Search, Trash2, FileType, Eye, Table as TableIcon } from 'lucide-react';
+import { Image as ImageIcon, Plus, Search, Trash2, FileType, Eye, Video } from 'lucide-react';
 import { supabaseService } from '../services/supabaseService';
 import { AcademicNote, Role, Division } from '../types';
-import ExcelViewer from '../components/ExcelViewer';
 
-const NotesPage: React.FC = () => {
+const MediaPage: React.FC = () => {
   const { selectedSubject, currentUser } = useApp();
-  const [docs, setDocs] = useState<AcademicNote[]>([]);
+  const [media, setMedia] = useState<AcademicNote[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [search, setSearch] = useState('');
-  const [viewingExcel, setViewingExcel] = useState<AcademicNote | null>(null);
   const [deletingItem, setDeletingItem] = useState<AcademicNote | null>(null);
+  const [viewingMedia, setViewingMedia] = useState<AcademicNote | null>(null);
   const [deleteStatus, setDeleteStatus] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   // Form states
   const [title, setTitle] = useState('');
-  const [type, setType] = useState<'PDF' | 'PPT' | 'DOC' | 'XLSX'>('PDF');
+  const [type, setType] = useState<'IMAGE' | 'VIDEO'>('IMAGE');
   const [file, setFile] = useState<File | null>(null);
   const [uploadDivision, setUploadDivision] = useState<Division | 'ALL'>('ALL');
 
   useEffect(() => {
-    const fetchDocs = async () => {
+    const fetchMedia = async () => {
       if (selectedSubject) {
         try {
           const data = await supabaseService.getDocuments(selectedSubject);
-          setDocs(data);
+          setMedia(data.filter(d => d.type === 'IMAGE' || d.type === 'VIDEO'));
         } catch (error) {
-          console.error("Error fetching documents:", error);
+          console.error("Error fetching media:", error);
         }
       }
     };
-    fetchDocs();
+    fetchMedia();
   }, [selectedSubject]);
 
   if (!selectedSubject || !currentUser) return null;
@@ -45,31 +43,28 @@ const NotesPage: React.FC = () => {
     if (selectedFile) {
       setFile(selectedFile);
       if (!title) {
-        // Auto-fill title from filename without extension
         setTitle(selectedFile.name.replace(/\.[^/.]+$/, ""));
       }
-      // Auto-detect type from extension
-      const ext = selectedFile.name.split('.').pop()?.toUpperCase();
-      if (ext === 'PDF') setType('PDF');
-      else if (ext === 'PPT' || ext === 'PPTX') setType('PPT');
-      else if (ext === 'DOC' || ext === 'DOCX') setType('DOC');
-      else if (ext === 'XLSX' || ext === 'XLS') setType('XLSX');
+      
+      if (selectedFile.type.startsWith('video/')) {
+        setType('VIDEO');
+      } else {
+        setType('IMAGE');
+      }
     }
   };
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title) return alert("Enter document title");
+    if (!title) return alert("Enter media title");
     if (!file) return alert("Please select a file to upload");
     
     setIsSubmitting(true);
     
     try {
-      // 1. Upload file to Supabase Storage
       const publicUrl = await supabaseService.uploadFile(file);
 
-      // 2. Create document record with the public URL
-      const newDoc: AcademicNote = {
+      const newMedia: AcademicNote = {
         id: Math.random().toString(36).substr(2, 9),
         title,
         type,
@@ -80,27 +75,26 @@ const NotesPage: React.FC = () => {
         createdAt: Date.now()
       };
 
-      await supabaseService.addDocument(newDoc);
+      await supabaseService.addDocument(newMedia);
       
-      // Create notification
       await supabaseService.addNotification({
         id: Math.random().toString(36).substr(2, 9),
-        title: 'New Note Uploaded',
-        message: `"${title}" has been added to the registry.`,
+        title: 'New Media Uploaded',
+        message: `"${title}" has been added to the media gallery.`,
         subject: selectedSubject,
         classTarget: uploadDivision,
         createdAt: Date.now()
       });
 
       const updatedDocs = await supabaseService.getDocuments(selectedSubject);
-      setDocs(updatedDocs);
+      setMedia(updatedDocs.filter(d => d.type === 'IMAGE' || d.type === 'VIDEO'));
       setTitle('');
       setFile(null);
       setIsUploading(false);
-      alert("Note uploaded successfully!");
+      alert("Media uploaded successfully!");
     } catch (error: any) {
       console.error("Upload error:", error);
-      alert(`Failed to upload note: ${error.message || 'Check your storage bucket permissions.'}`);
+      alert(`Failed to upload media: ${error.message || 'Check your storage bucket permissions.'}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -111,7 +105,7 @@ const NotesPage: React.FC = () => {
       const success = await supabaseService.deleteDocument(id, division);
       if (success) {
         setDeleteStatus({ message: "Item deleted successfully.", type: 'success' });
-        setDocs(prev => {
+        setMedia(prev => {
           if (!division || division === 'ALL') {
             return prev.filter(d => d.id !== id);
           }
@@ -128,26 +122,25 @@ const NotesPage: React.FC = () => {
     setTimeout(() => setDeleteStatus(null), 3000);
   };
 
-  const filteredDocs = docs.filter(d => {
-    const isNote = ['PDF', 'PPT', 'DOC', 'XLSX'].includes(d.type);
+  const filteredMedia = media.filter(d => {
     const matchesSearch = d.title.toLowerCase().includes(search.toLowerCase());
     const matchesDivision = currentUser.role === Role.ADMIN || d.division === 'ALL' || d.division === currentUser.division;
-    return isNote && matchesSearch && matchesDivision;
+    return matchesSearch && matchesDivision;
   });
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white">Academic Notes</h2>
-          <p className="text-slate-400 text-sm">Access academic materials for {selectedSubject.toLowerCase()}.</p>
+          <h2 className="text-2xl font-bold text-white">Images & Video</h2>
+          <p className="text-slate-400 text-sm">Access media materials for {selectedSubject.toLowerCase()}.</p>
         </div>
         {currentUser.role === Role.ADMIN && (
           <button 
             onClick={() => setIsUploading(true)}
             className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold transition-all shadow-lg ${theme.button}`}
           >
-            <Plus className="w-5 h-5" /> UPLOAD NOTES
+            <Plus className="w-5 h-5" /> UPLOAD MEDIA
           </button>
         )}
       </div>
@@ -158,7 +151,7 @@ const NotesPage: React.FC = () => {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by filename or keyword..."
+          placeholder="Search by title or keyword..."
           className="w-full bg-slate-900/40 border border-slate-800 rounded-2xl px-12 py-4 text-sm text-white focus:outline-none focus:border-slate-600"
         />
       </div>
@@ -167,34 +160,19 @@ const NotesPage: React.FC = () => {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div className={`w-full max-w-md bg-slate-900 border ${theme.border} rounded-[32px] p-8 shadow-2xl`}>
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-white uppercase tracking-wider">Upload Asset</h3>
+              <h3 className="text-xl font-bold text-white uppercase tracking-wider">Upload Media</h3>
               <button onClick={() => setIsUploading(false)} className="text-slate-400 hover:text-white"><Plus className="w-6 h-6 rotate-45" /></button>
             </div>
             <form onSubmit={handleUpload} className="space-y-4">
               <div>
-                <label className="block text-xs font-mono text-slate-500 uppercase mb-1">Note Title</label>
+                <label className="block text-xs font-mono text-slate-500 uppercase mb-1">Media Title</label>
                 <input 
                   type="text" 
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   className="w-full bg-black border border-slate-800 rounded-xl px-4 py-3 text-sm text-white"
-                  placeholder="Lecture 01 - Basics"
+                  placeholder="Lab Experiment 01"
                 />
-              </div>
-              <div>
-                <label className="block text-xs font-mono text-slate-500 uppercase mb-1">File Type</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {['PDF', 'PPT', 'DOC', 'XLSX'].map(t => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setType(t as any)}
-                      className={`py-2 rounded-lg border text-xs font-bold transition-all ${type === t ? `bg-white/10 ${theme.accent} border-white/20` : 'bg-transparent border-slate-800 text-slate-500'}`}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
               </div>
               <div>
                 <label className="block text-xs font-mono text-slate-500 uppercase mb-1">Target Class</label>
@@ -212,21 +190,21 @@ const NotesPage: React.FC = () => {
                 </div>
               </div>
               <div 
-                onClick={() => document.getElementById('file-upload')?.click()}
+                onClick={() => document.getElementById('media-upload')?.click()}
                 className="border-2 border-dashed border-slate-800 rounded-2xl p-8 text-center bg-black/40 cursor-pointer hover:border-slate-600 transition-colors"
               >
                 <input 
-                  id="file-upload"
+                  id="media-upload"
                   type="file" 
                   className="hidden" 
-                  accept=".pdf,.ppt,.pptx,.doc,.docx,.xlsx,.xls"
+                  accept="image/*,video/*"
                   onChange={handleFileChange}
                 />
                 <FileType className={`w-10 h-10 mx-auto mb-2 ${file ? theme.accent : 'text-slate-600'}`} />
                 {file ? (
                   <p className="text-xs text-white font-medium truncate">{file.name}</p>
                 ) : (
-                  <p className="text-xs text-slate-500">Click to select PDF, PPT, DOC, or XLSX</p>
+                  <p className="text-xs text-slate-500">Click to select Image or Video</p>
                 )}
               </div>
               <button 
@@ -242,101 +220,143 @@ const NotesPage: React.FC = () => {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {filteredDocs.map(doc => (
-          <div key={doc.id} className={`group relative p-6 rounded-[28px] border border-white/5 bg-slate-900/40 hover:border-slate-600 transition-all overflow-hidden`}>
+        {filteredMedia.map(item => (
+          <div key={item.id} className={`group relative p-6 rounded-[28px] border border-white/5 bg-slate-900/40 hover:border-slate-600 transition-all overflow-hidden`}>
             <div className="flex items-start justify-between mb-4">
               <div className={`p-3 rounded-xl bg-slate-800 ${theme.accent}`}>
-                {doc.type === 'XLSX' ? <TableIcon className="w-6 h-6" /> : <FileText className="w-6 h-6" />}
+                {item.type === 'VIDEO' ? <Video className="w-6 h-6" /> : <ImageIcon className="w-6 h-6" />}
               </div>
               <div className="flex gap-2">
-                {doc.type === 'XLSX' && (
-                  <button 
-                    onClick={() => setViewingExcel(doc)}
-                    className="p-2 text-slate-400 hover:text-white transition-colors"
-                    title="View Spreadsheet"
-                  >
-                    <Eye className="w-5 h-5" />
-                  </button>
-                )}
-                {currentUser.role === Role.ADMIN && (
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeletingItem(doc);
-                    }} 
-                    className="p-2 text-red-500/50 hover:text-red-500 transition-colors bg-red-500/10 rounded-lg"
-                    title="Delete Note"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
-                )}
+                <span className={`px-2 py-1 rounded-lg text-[10px] font-bold tracking-widest uppercase border ${
+                  item.division === 'ALL' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-slate-800 text-slate-300 border-slate-700'
+                }`}>
+                  {item.division}
+                </span>
+                <span className="px-2 py-1 rounded-lg text-[10px] font-bold tracking-widest uppercase border bg-slate-800 text-slate-300 border-slate-700">
+                  {item.type}
+                </span>
               </div>
             </div>
-            <h3 className="text-white font-bold mb-1 truncate pr-16">{doc.title}</h3>
-            <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500 font-mono uppercase">
-              <span className={`px-2 py-0.5 rounded-full bg-slate-800 ${theme.accent}`}>{doc.type}</span>
-              <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">{doc.division === 'ALL' ? 'ALL CLASSES' : `DIV ${doc.division}`}</span>
-              <span>By {doc.uploadedBy}</span>
+            
+            <h3 className="text-lg font-bold text-white mb-1 truncate">{item.title}</h3>
+            <p className="text-xs text-slate-400 font-mono mb-6">Uploaded by {item.uploadedBy}</p>
+            
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setViewingMedia(item)}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all bg-white/5 hover:bg-white/10 text-white border border-white/5`}
+              >
+                <Eye className="w-4 h-4" /> VIEW
+              </button>
+              {currentUser.role === Role.ADMIN && (
+                <button 
+                  onClick={() => setDeletingItem(item)}
+                  className="p-3 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors border border-rose-500/20"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
         ))}
-        {filteredDocs.length === 0 && (
+        {filteredMedia.length === 0 && (
           <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-800 rounded-[40px]">
-            <p className="text-slate-600 font-mono text-sm">NO NOTES FOUND IN REGISTRY</p>
+            <p className="text-slate-600 font-mono text-sm">NO MEDIA FOUND</p>
           </div>
         )}
       </div>
 
-      {viewingExcel && (
-        <ExcelViewer 
-          fileUrl={viewingExcel.fileUrl} 
-          title={viewingExcel.title} 
-          onClose={() => setViewingExcel(null)} 
-          theme={theme}
-        />
-      )}
-
       {deletingItem && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div className={`w-full max-w-md bg-slate-900 border ${theme.border} rounded-[32px] p-8 shadow-2xl`}>
-            <h3 className="text-xl font-bold text-white mb-2">Delete this item from:</h3>
-            <p className="text-slate-400 text-sm mb-6">Select the class scope for deletion of "{deletingItem.title}"</p>
+            <h3 className="text-xl font-bold text-white mb-2">Delete Media</h3>
+            <p className="text-slate-400 text-sm mb-6">Are you sure you want to delete "{deletingItem.title}"? This action cannot be undone.</p>
             
-            <div className="grid grid-cols-1 gap-3 mb-8">
-              {Object.values(Division).map(div => (
-                <button
-                  key={div}
-                  onClick={() => handleDelete(deletingItem.id, div)}
-                  className="w-full py-3 rounded-xl bg-white/5 border border-white/5 text-white font-bold hover:bg-red-500/20 hover:border-red-500/50 transition-all"
+            {deletingItem.division === 'ALL' ? (
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setDeletingItem(null)}
+                  className="flex-1 py-3 rounded-xl font-bold bg-slate-800 text-white hover:bg-slate-700 transition-colors"
                 >
-                  {div} ONLY
+                  CANCEL
                 </button>
-              ))}
-              <button
-                onClick={() => handleDelete(deletingItem.id, 'ALL')}
-                className="w-full py-3 rounded-xl bg-red-500 text-white font-bold hover:bg-red-600 transition-all"
-              >
-                ALL CLASSES
-              </button>
-            </div>
-            
-            <button 
-              onClick={() => setDeletingItem(null)}
-              className="w-full py-3 text-slate-500 font-bold hover:text-white transition-colors"
-            >
-              CANCEL
-            </button>
+                <button 
+                  onClick={() => handleDelete(deletingItem.id)}
+                  className="flex-1 py-3 rounded-xl font-bold bg-rose-500 text-white hover:bg-rose-600 transition-colors"
+                >
+                  DELETE EVERYWHERE
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <button 
+                  onClick={() => handleDelete(deletingItem.id, deletingItem.division)}
+                  className="w-full py-3 rounded-xl font-bold bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 border border-rose-500/20 transition-colors"
+                >
+                  DELETE FOR {deletingItem.division} ONLY
+                </button>
+                <button 
+                  onClick={() => handleDelete(deletingItem.id)}
+                  className="w-full py-3 rounded-xl font-bold bg-rose-500 text-white hover:bg-rose-600 transition-colors"
+                >
+                  DELETE EVERYWHERE
+                </button>
+                <button 
+                  onClick={() => setDeletingItem(null)}
+                  className="w-full py-3 rounded-xl font-bold bg-slate-800 text-white hover:bg-slate-700 transition-colors"
+                >
+                  CANCEL
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {deleteStatus && (
-        <div className={`fixed bottom-8 right-8 z-[300] px-6 py-4 rounded-2xl shadow-2xl animate-in slide-in-from-right duration-500 ${deleteStatus.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`}>
-          <p className="font-bold text-sm uppercase tracking-widest">{deleteStatus.message}</p>
+        <div className={`fixed bottom-6 right-6 px-6 py-4 rounded-2xl font-bold text-sm shadow-2xl animate-in slide-in-from-bottom-4 ${
+          deleteStatus.type === 'success' ? 'bg-emerald-500 text-black' : 'bg-rose-500 text-white'
+        }`}>
+          {deleteStatus.message}
+        </div>
+      )}
+
+      {viewingMedia && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+          <div className="relative w-full max-w-5xl max-h-[90vh] flex flex-col items-center justify-center">
+            <button 
+              onClick={() => setViewingMedia(null)}
+              className="absolute -top-12 right-0 text-slate-400 hover:text-white transition-colors flex items-center gap-2"
+            >
+              <span className="text-sm font-bold tracking-widest uppercase">Close</span>
+              <Plus className="w-6 h-6 rotate-45" />
+            </button>
+            
+            {viewingMedia.type === 'IMAGE' ? (
+              <img 
+                src={viewingMedia.fileUrl} 
+                alt={viewingMedia.title}
+                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+                referrerPolicy="no-referrer"
+              />
+            ) : viewingMedia.type === 'VIDEO' ? (
+              <video 
+                src={viewingMedia.fileUrl} 
+                controls 
+                autoPlay
+                className="max-w-full max-h-[85vh] rounded-lg shadow-2xl bg-black"
+              />
+            ) : null}
+            
+            <div className="mt-4 text-center">
+              <h3 className="text-xl font-bold text-white">{viewingMedia.title}</h3>
+              <p className="text-sm text-slate-400 mt-1">Uploaded by {viewingMedia.uploadedBy}</p>
+            </div>
+          </div>
         </div>
       )}
     </div>
   );
 };
 
-export default NotesPage;
+export default MediaPage;

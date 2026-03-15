@@ -3,39 +3,72 @@ import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { useApp } from '../context/AppContext';
 import { THEMES } from '../constants';
-import { PenTool, Plus, CheckCircle, FileSpreadsheet, Trash2 } from 'lucide-react';
+import { PenTool, Plus, CheckCircle, FileSpreadsheet, Trash2, Clock } from 'lucide-react';
 import { supabaseService } from '../services/supabaseService';
 import { Test, Role, Question, Result, Division } from '../types';
+import { deterministicShuffle } from '../utils/shuffle';
 
 const TestsPage: React.FC = () => {
   const { selectedSubject, currentUser } = useApp();
   const [tests, setTests] = useState<Test[]>([]);
+  const [results, setResults] = useState<Result[]>([]);
   const [activeTest, setActiveTest] = useState<Test | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [showScore, setShowScore] = useState<Result | null>(null);
   const [deletingItem, setDeletingItem] = useState<Test | null>(null);
   const [deleteStatus, setDeleteStatus] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   // Creation form
   const [testTitle, setTestTitle] = useState('');
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [testDivision, setTestDivision] = useState<Division | 'ALL'>('ALL');
-  const [totalQuestionsToAttempt, setTotalQuestionsToAttempt] = useState<string>('');
+  const [timeLimit, setTimeLimit] = useState<string>('');
+  const [shuffleEnabled, setShuffleEnabled] = useState<boolean>(false);
+  const [shuffleOptionsEnabled, setShuffleOptionsEnabled] = useState<boolean>(false);
 
   useEffect(() => {
-    const fetchTests = async () => {
+    const fetchData = async () => {
       if (selectedSubject) {
         try {
-          const data = await supabaseService.getTests(selectedSubject);
-          setTests(data);
+          const [testsData, resultsData] = await Promise.all([
+            supabaseService.getTests(selectedSubject),
+            supabaseService.getResults(selectedSubject)
+          ]);
+          setTests(testsData);
+          setResults(resultsData);
         } catch (error) {
-          console.error("Error fetching tests:", error);
+          console.error("Error fetching data:", error);
         }
       }
     };
-    fetchTests();
+    fetchData();
   }, [selectedSubject]);
+
+  useEffect(() => {
+    if (activeTest && activeTest.timeLimit) {
+      setTimeLeft(activeTest.timeLimit * 60);
+    } else {
+      setTimeLeft(null);
+    }
+  }, [activeTest]);
+
+  useEffect(() => {
+    if (timeLeft === null || timeLeft <= 0) return;
+    
+    const timerId = setInterval(() => {
+      setTimeLeft(prev => (prev && prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    
+    return () => clearInterval(timerId);
+  }, [timeLeft]);
+
+  useEffect(() => {
+    if (timeLeft === 0 && activeTest) {
+      submitTest();
+    }
+  }, [timeLeft]);
 
   if (!selectedSubject || !currentUser) return null;
   const theme = THEMES[selectedSubject];
@@ -71,7 +104,10 @@ const TestsPage: React.FC = () => {
           return;
         }
 
-        const testId = Math.random().toString(36).substr(2, 9);
+        const baseTestId = Math.random().toString(36).substr(2, 9);
+        let testId = baseTestId;
+        if (shuffleEnabled) testId += '_S';
+        if (shuffleOptionsEnabled) testId += '_O';
         const questions: Question[] = [];
 
         // Helper to find value by case-insensitive header match
@@ -117,7 +153,7 @@ const TestsPage: React.FC = () => {
           division: testDivision,
           createdBy: currentUser.name,
           questions: questions,
-          totalQuestionsToAttempt: totalQuestionsToAttempt ? parseInt(totalQuestionsToAttempt) : undefined,
+          timeLimit: timeLimit ? parseInt(timeLimit) : undefined,
           createdAt: Date.now()
         };
 
@@ -137,6 +173,8 @@ const TestsPage: React.FC = () => {
         setTests(updatedTests);
         setTestTitle('');
         setExcelFile(null);
+        setShuffleEnabled(false);
+        setShuffleOptionsEnabled(false);
         setIsCreating(false);
         alert(`Successfully imported ${questions.length} questions.`);
       } catch (error) {
@@ -150,9 +188,9 @@ const TestsPage: React.FC = () => {
   const submitTest = async () => {
     if (!activeTest) return;
 
-    // Check if all questions are answered
+    // Check if all questions are answered, but bypass if time is up
     const unansweredCount = activeTest.questions.filter(q => !answers[q.id]).length;
-    if (unansweredCount > 0) {
+    if (unansweredCount > 0 && timeLeft !== 0) {
       alert(`Please answer all questions before submitting. You have ${unansweredCount} unanswered question(s) remaining.`);
       return;
     }
@@ -197,6 +235,7 @@ const TestsPage: React.FC = () => {
       setShowScore(result);
       setActiveTest(null);
       setAnswers({});
+      setResults(prev => [result, ...prev]);
     } catch (error) {
       console.error("Error submitting test:", error);
       alert("Failed to submit test results.");
@@ -231,10 +270,15 @@ const TestsPage: React.FC = () => {
 
   const startTest = (test: Test) => {
     let questions = [...test.questions];
-    if (test.totalQuestionsToAttempt && test.totalQuestionsToAttempt < questions.length) {
-      // Randomly select questions
-      questions = questions.sort(() => Math.random() - 0.5).slice(0, test.totalQuestionsToAttempt);
+    
+    const isShuffleEnabled = test.id.includes('_S');
+    
+    // Apply deterministic shuffle if enabled and user is a student
+    if (isShuffleEnabled && currentUser.role === Role.STUDENT) {
+      const seedString = `${currentUser.id}*${test.id}`;
+      questions = deterministicShuffle(questions, seedString);
     }
+
     setActiveTest({ ...test, questions });
   };
 
@@ -283,51 +327,76 @@ const TestsPage: React.FC = () => {
                       <p className="text-lg text-white font-medium">{attempt.questionText}</p>
                     </div>
                     
-                    <div className="space-y-3">
-                      {['A', 'B', 'C', 'D'].map(key => {
-                        const value = attempt.options[key as keyof typeof attempt.options];
-                        const isSelected = attempt.selectedAnswer === key;
-                        const isCorrect = attempt.correctAnswer === key;
-                        
-                        let borderColor = 'border-slate-800';
-                        let bgColor = 'bg-transparent';
-                        let textColor = 'text-slate-400';
-                        
-                        if (isCorrect) {
-                          borderColor = 'border-emerald-500';
-                          bgColor = 'bg-emerald-500/10';
-                          textColor = 'text-emerald-400';
-                        } else if (isSelected && !isCorrect) {
-                          borderColor = 'border-rose-500';
-                          bgColor = 'bg-rose-500/10';
-                          textColor = 'text-rose-400';
+                    {(() => {
+                      const isShuffleOptionsEnabled = showScore.testId.includes('_O');
+                        let optionsArr = ['A', 'B', 'C', 'D'].map(key => ({
+                          key,
+                          text: attempt.options[key as keyof typeof attempt.options]
+                        }));
+
+                        if (isShuffleOptionsEnabled && currentUser.role === Role.STUDENT) {
+                          const seedString = `${currentUser.id}*${showScore.testId}*${attempt.questionId}`;
+                          optionsArr = deterministicShuffle(optionsArr, seedString);
                         }
 
-                        return (
-                          <div key={key} className={`p-4 rounded-2xl border ${borderColor} ${bgColor} flex items-center gap-4`}>
-                            <span className={`w-7 h-7 rounded-full border flex items-center justify-center text-xs font-bold ${borderColor} ${textColor}`}>{key}</span>
-                            <span className={`text-sm font-medium ${textColor}`}>{value}</span>
-                            {isSelected && (
-                              <span className="ml-auto text-[10px] font-mono uppercase opacity-60">Your Choice</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                        const labels = ['A', 'B', 'C', 'D'];
+                        const getRenderedLabel = (originalKey: string) => {
+                          const index = optionsArr.findIndex(o => o.key === originalKey);
+                          return index !== -1 ? labels[index] : originalKey;
+                        };
 
-                    <div className="flex flex-wrap gap-4 pt-4">
-                      <div className={`px-4 py-2 rounded-xl text-[10px] font-mono uppercase tracking-widest border ${attempt.isCorrect ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
-                        Your Answer: {attempt.selectedAnswer || 'None'}
-                      </div>
-                      {currentUser.role === Role.ADMIN && (
-                        <div className="px-4 py-2 rounded-xl text-[10px] font-mono uppercase tracking-widest border border-emerald-500/20 bg-emerald-500/10 text-emerald-400">
-                          Correct Answer: {attempt.correctAnswer}
-                        </div>
-                      )}
-                      <div className={`px-4 py-2 rounded-xl text-[10px] font-mono uppercase tracking-widest flex items-center gap-2 ${attempt.isCorrect ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                        {attempt.isCorrect ? '✅ Correct' : '❌ Incorrect'}
-                      </div>
-                    </div>
+                        return (
+                          <>
+                            <div className="space-y-3">
+                              {labels.map((label, index) => {
+                                const optObj = optionsArr[index];
+                                const originalKey = optObj.key;
+                                const value = optObj.text;
+                                const isSelected = attempt.selectedAnswer === originalKey;
+                                const isCorrect = attempt.correctAnswer === originalKey;
+                                
+                                let borderColor = 'border-slate-800';
+                                let bgColor = 'bg-transparent';
+                                let textColor = 'text-slate-400';
+                                
+                                if (isCorrect) {
+                                  borderColor = 'border-emerald-500';
+                                  bgColor = 'bg-emerald-500/10';
+                                  textColor = 'text-emerald-400';
+                                } else if (isSelected && !isCorrect) {
+                                  borderColor = 'border-rose-500';
+                                  bgColor = 'bg-rose-500/10';
+                                  textColor = 'text-rose-400';
+                                }
+
+                                return (
+                                  <div key={label} className={`p-4 rounded-2xl border ${borderColor} ${bgColor} flex items-center gap-4`}>
+                                    <span className={`w-7 h-7 rounded-full border flex items-center justify-center text-xs font-bold ${borderColor} ${textColor}`}>{label}</span>
+                                    <span className={`text-sm font-medium ${textColor}`}>{value}</span>
+                                    {isSelected && (
+                                      <span className="ml-auto text-[10px] font-mono uppercase opacity-60">Your Choice</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            <div className="flex flex-wrap gap-4 pt-4">
+                              <div className={`px-4 py-2 rounded-xl text-[10px] font-mono uppercase tracking-widest border ${attempt.isCorrect ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
+                                Your Answer: {attempt.selectedAnswer ? getRenderedLabel(attempt.selectedAnswer) : 'None'}
+                              </div>
+                              {currentUser.role === Role.ADMIN && (
+                                <div className="px-4 py-2 rounded-xl text-[10px] font-mono uppercase tracking-widest border border-emerald-500/20 bg-emerald-500/10 text-emerald-400">
+                                  Correct Answer: {getRenderedLabel(attempt.correctAnswer)}
+                                </div>
+                              )}
+                              <div className={`px-4 py-2 rounded-xl text-[10px] font-mono uppercase tracking-widest flex items-center gap-2 ${attempt.isCorrect ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                                {attempt.isCorrect ? '✅ Correct' : '❌ Incorrect'}
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
                   </div>
 
                   {/* Right Side: Bloom's Level (30%) */}
@@ -354,12 +423,36 @@ const TestsPage: React.FC = () => {
   }
 
   if (activeTest) {
+    const formatTime = (seconds: number) => {
+      const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+      const s = (seconds % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    };
+
     return (
       <div className="max-w-3xl mx-auto py-8">
         <div className="flex items-center justify-between mb-12">
           <div>
             <h2 className="text-2xl font-black text-white uppercase">{activeTest.title}</h2>
             <p className="text-slate-400 text-sm">Attempting {selectedSubject.toLowerCase()} module test</p>
+          </div>
+          <div className="flex items-center gap-4">
+            {timeLeft !== null && (
+              <div className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold transition-all shadow-lg ${timeLeft < 60 ? 'bg-rose-500/20 text-rose-400 border border-rose-500/50 animate-pulse' : 'bg-slate-900/40 border border-slate-800 text-white'}`}>
+                <Clock className="w-5 h-5" />
+                <span className="font-mono text-lg">{formatTime(timeLeft)}</span>
+              </div>
+            )}
+            <button 
+              onClick={() => {
+                setActiveTest(null);
+                setAnswers({});
+                setTimeLeft(null);
+              }}
+              className="px-6 py-3 rounded-2xl font-bold bg-slate-800 text-white hover:bg-slate-700 transition-colors"
+            >
+              Cancel
+            </button>
           </div>
         </div>
 
@@ -377,20 +470,35 @@ const TestsPage: React.FC = () => {
                   </div>
                   
                   <div className="space-y-3">
-                    {['A', 'B', 'C', 'D'].map(opt => {
-                      const key = `option_${opt.toLowerCase()}` as keyof Question;
-                      const isSelected = answers[q.id] === opt;
-                      return (
-                        <button
-                          key={opt}
-                          onClick={() => setAnswers(prev => ({ ...prev, [q.id]: opt }))}
-                          className={`w-full p-4 rounded-2xl text-left border transition-all flex items-center gap-4 ${isSelected ? `bg-white/10 ${theme.border} ${theme.accent}` : 'bg-transparent border-slate-800 text-slate-400 hover:border-slate-600'}`}
-                        >
-                          <span className={`w-7 h-7 rounded-full border flex items-center justify-center text-xs font-bold ${isSelected ? `border-white/20 bg-white/10` : 'border-slate-700'}`}>{opt}</span>
-                          <span className="text-sm font-medium">{q[key] as string}</span>
-                        </button>
-                      );
-                    })}
+                    {(() => {
+                      const isShuffleOptionsEnabled = activeTest.id.includes('_O');
+                      let optionsArr = ['A', 'B', 'C', 'D'].map(opt => ({
+                        key: opt,
+                        text: q[`option_${opt.toLowerCase()}` as keyof Question] as string
+                      }));
+
+                      if (isShuffleOptionsEnabled && currentUser.role === Role.STUDENT) {
+                        const seedString = `${currentUser.id}*${activeTest.id}*${q.id}`;
+                        optionsArr = deterministicShuffle(optionsArr, seedString);
+                      }
+
+                      const labels = ['A', 'B', 'C', 'D'];
+                      return labels.map((label, index) => {
+                        const optObj = optionsArr[index];
+                        const originalKey = optObj.key;
+                        const isSelected = answers[q.id] === originalKey;
+                        return (
+                          <button
+                            key={label}
+                            onClick={() => setAnswers(prev => ({ ...prev, [q.id]: originalKey }))}
+                            className={`w-full p-4 rounded-2xl text-left border transition-all flex items-center gap-4 ${isSelected ? `bg-white/10 ${theme.border} ${theme.accent}` : 'bg-transparent border-slate-800 text-slate-400 hover:border-slate-600'}`}
+                          >
+                            <span className={`w-7 h-7 rounded-full border flex items-center justify-center text-xs font-bold ${isSelected ? `border-white/20 bg-white/10` : 'border-slate-700'}`}>{label}</span>
+                            <span className="text-sm font-medium">{optObj.text}</span>
+                          </button>
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
 
@@ -487,14 +595,40 @@ const TestsPage: React.FC = () => {
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-mono text-slate-500 uppercase mb-1">Questions to Attempt</label>
+                <label className="block text-xs font-mono text-slate-500 uppercase mb-1">Timer (Minutes)</label>
                 <input 
                   type="number" 
-                  value={totalQuestionsToAttempt}
-                  onChange={(e) => setTotalQuestionsToAttempt(e.target.value)}
+                  value={timeLimit}
+                  onChange={(e) => setTimeLimit(e.target.value)}
                   className="w-full bg-black border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:border-slate-600 outline-none"
-                  placeholder="e.g. 20 (Leave blank for all)"
+                  placeholder="e.g. 30 (Leave blank for no limit)"
                 />
+              </div>
+              <div className="flex items-center justify-between p-4 rounded-xl bg-slate-800/30 border border-slate-800">
+                <div>
+                  <p className="text-sm font-bold text-white">Shuffle Questions</p>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-widest">Per Student Attempt</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShuffleEnabled(!shuffleEnabled)}
+                  className={`w-12 h-6 rounded-full transition-colors relative ${shuffleEnabled ? theme.button : 'bg-slate-700'}`}
+                >
+                  <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${shuffleEnabled ? 'translate-x-7' : 'translate-x-1'}`} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between p-4 rounded-xl bg-slate-800/30 border border-slate-800">
+                <div>
+                  <p className="text-sm font-bold text-white">Auto Shuffle Options</p>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-widest">Randomize A, B, C, D</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShuffleOptionsEnabled(!shuffleOptionsEnabled)}
+                  className={`w-12 h-6 rounded-full transition-colors relative ${shuffleOptionsEnabled ? theme.button : 'bg-slate-700'}`}
+                >
+                  <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${shuffleOptionsEnabled ? 'translate-x-7' : 'translate-x-1'}`} />
+                </button>
               </div>
               <div className="border-2 border-dashed border-slate-800 rounded-2xl p-8 text-center bg-black/40">
                 <FileSpreadsheet className={`w-10 h-10 mx-auto mb-2 ${excelFile ? theme.accent : 'text-slate-600'}`} />
@@ -519,7 +653,10 @@ const TestsPage: React.FC = () => {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredTests.map(test => (
+        {filteredTests.map(test => {
+          const hasSubmitted = currentUser.role === Role.STUDENT && results.some(r => r.testId === test.id && r.studentId === currentUser.id);
+          
+          return (
           <div key={test.id} className="p-8 rounded-[32px] bg-slate-900/40 border border-white/5 hover:border-slate-700 transition-all flex flex-col justify-between">
             <div className="flex justify-between items-start mb-4">
               <div className={`p-4 rounded-2xl bg-white/5 ${theme.accent}`}>
@@ -549,15 +686,19 @@ const TestsPage: React.FC = () => {
             </div>
             <div className="flex items-center gap-4 text-[10px] text-slate-400 font-mono mb-8">
               <span className="flex items-center gap-1"><PenTool className="w-3 h-3" /> {test.questions.length} Qs</span>
+              {test.timeLimit && <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {test.timeLimit} Min</span>}
             </div>
             <button 
-              onClick={() => startTest(test)}
-              className={`w-full py-3 rounded-2xl font-bold uppercase tracking-widest text-xs transition-all ${theme.button}`}
+              onClick={() => {
+                if (!hasSubmitted) startTest(test);
+              }}
+              disabled={hasSubmitted}
+              className={`w-full py-3 rounded-2xl font-bold uppercase tracking-widest text-xs transition-all ${hasSubmitted ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : theme.button}`}
             >
-              {currentUser.role === Role.ADMIN ? 'Manage Questions' : 'Start Assessment'}
+              {currentUser.role === Role.ADMIN ? 'Manage Questions' : (hasSubmitted ? 'Already Submitted' : 'Start Assessment')}
             </button>
           </div>
-        ))}
+        )})}
         {filteredTests.length === 0 && (
           <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-800 rounded-[40px]">
             <p className="text-slate-600 font-mono text-sm">NO TESTS REGISTERED IN DATABASE</p>

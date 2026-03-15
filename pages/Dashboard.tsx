@@ -1,39 +1,62 @@
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { THEMES } from '../constants';
-import { FileText, PenTool, Users, Megaphone, Sparkles, Send, Terminal, Plus } from 'lucide-react';
+import { FileText, PenTool, Users, Megaphone, Plus, Trash2, UserX } from 'lucide-react';
 import { supabaseService } from '../services/supabaseService';
-import { askGemini } from '../services/geminiService';
 import { Role, Notification } from '../types';
 
 const Dashboard: React.FC = () => {
   const { selectedSubject, currentUser } = useApp();
+  const navigate = useNavigate();
   const [stats, setStats] = useState({ docs: 0, tests: 0, students: 0 });
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [activeToast, setActiveToast] = useState<Notification | null>(null);
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [aiResponse, setAiResponse] = useState('');
-  const [isLoadingAi, setIsLoadingAi] = useState(false);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [allResults, setAllResults] = useState<any[]>([]);
+  const [allTests, setAllTests] = useState<any[]>([]);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isTakingLong, setIsTakingLong] = useState(false);
+
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
+    if (isInitialLoading) {
+      timeout = setTimeout(() => setIsTakingLong(true), 3000);
+    }
+    return () => clearTimeout(timeout);
+  }, [isInitialLoading]);
 
   useEffect(() => {
     const fetchData = async () => {
       if (selectedSubject && currentUser) {
+        setIsInitialLoading(true);
         try {
-          const [allDocs, allTests, allNotifications, allUsers] = await Promise.all([
+          // Fetch data in parallel
+          const dataPromise = Promise.all([
             supabaseService.getDocuments(selectedSubject),
             supabaseService.getTests(selectedSubject),
             supabaseService.getNotifications(selectedSubject),
-            supabaseService.getUsers(selectedSubject)
+            supabaseService.getUserCount(selectedSubject),
+            currentUser.role === Role.ADMIN ? supabaseService.getUsers(selectedSubject) : Promise.resolve([]),
+            currentUser.role === Role.ADMIN ? supabaseService.getResults(selectedSubject) : Promise.resolve([])
           ]);
+
+          const [allDocs, fetchedTests, allNotifications, studentCount, fetchedUsers, fetchedResults] = await dataPromise;
           
+          setAllTests(fetchedTests);
+          if (currentUser.role === Role.ADMIN) {
+            setAllUsers(fetchedUsers);
+            setAllResults(fetchedResults);
+          }
+
           const filteredDocs = currentUser.role === Role.ADMIN 
             ? allDocs 
             : allDocs.filter(d => d.division === 'ALL' || d.division === currentUser.division);
             
           const filteredTests = currentUser.role === Role.ADMIN 
-            ? allTests 
-            : allTests.filter(t => t.division === 'ALL' || t.division === currentUser.division);
+            ? fetchedTests 
+            : fetchedTests.filter(t => t.division === 'ALL' || t.division === currentUser.division);
 
           const filteredNotifications = currentUser.role === Role.ADMIN
             ? allNotifications
@@ -42,7 +65,7 @@ const Dashboard: React.FC = () => {
           setStats({
             docs: filteredDocs.length,
             tests: filteredTests.length,
-            students: allUsers.filter(u => u.role === Role.STUDENT).length
+            students: studentCount
           });
 
           setNotifications(filteredNotifications.sort((a, b) => b.createdAt - a.createdAt));
@@ -56,6 +79,8 @@ const Dashboard: React.FC = () => {
           }
         } catch (error) {
           console.error("Error fetching dashboard data:", error);
+        } finally {
+          setIsInitialLoading(false);
         }
       }
     };
@@ -66,14 +91,29 @@ const Dashboard: React.FC = () => {
   if (!selectedSubject || !currentUser) return null;
   const theme = THEMES[selectedSubject];
 
-  const handleAskAi = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!aiPrompt.trim()) return;
-    setIsLoadingAi(true);
-    const res = await askGemini(aiPrompt, selectedSubject);
-    setAiResponse(res || '');
-    setIsLoadingAi(false);
-  };
+  if (isInitialLoading) {
+    return (
+      <div className="space-y-8 animate-pulse relative">
+        {isTakingLong && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center">
+            <div className="bg-slate-900/90 border border-slate-700 px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4">
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              <p className="text-sm font-mono text-slate-300">Waking up database... Please wait.</p>
+            </div>
+          </div>
+        )}
+        <div className="h-48 rounded-[32px] bg-slate-900/40 border border-white/5" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-24 rounded-[28px] bg-slate-900/40 border border-white/5" />
+          ))}
+        </div>
+        <div className="grid lg:grid-cols-1 gap-8">
+          <div className="h-64 rounded-[32px] bg-slate-900/40 border border-white/5" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -102,7 +142,10 @@ const Dashboard: React.FC = () => {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div className={`p-6 rounded-[28px] bg-slate-900/40 border ${theme.border} flex items-center gap-6 group hover:border-slate-600 transition-colors`}>
+        <div 
+          onClick={() => navigate('/documents')}
+          className={`p-6 rounded-[28px] bg-slate-900/40 border ${theme.border} flex items-center gap-6 group hover:border-slate-600 transition-colors cursor-pointer`}
+        >
           <div className={`w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center ${theme.accent}`}>
             <FileText className="w-8 h-8" />
           </div>
@@ -111,7 +154,10 @@ const Dashboard: React.FC = () => {
             <p className="text-3xl font-bold text-white">{stats.docs}</p>
           </div>
         </div>
-        <div className={`p-6 rounded-[28px] bg-slate-900/40 border ${theme.border} flex items-center gap-6 group hover:border-slate-600 transition-colors`}>
+        <div 
+          onClick={() => navigate('/tests')}
+          className={`p-6 rounded-[28px] bg-slate-900/40 border ${theme.border} flex items-center gap-6 group hover:border-slate-600 transition-colors cursor-pointer`}
+        >
           <div className={`w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center ${theme.accent}`}>
             <PenTool className="w-8 h-8" />
           </div>
@@ -132,14 +178,14 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Bottom Grid */}
-      <div className="grid lg:grid-cols-3 gap-8">
+      <div className="grid lg:grid-cols-1 gap-8">
         {/* Latest Announcements */}
-        <div className={`lg:col-span-1 rounded-[32px] border ${theme.border} bg-slate-900/40 flex flex-col p-8 overflow-hidden`}>
-          <div className="flex items-center gap-3 mb-6">
-            <Megaphone className={`w-6 h-6 ${theme.accent}`} />
-            <h2 className="text-xl font-bold text-white">Latest Comms</h2>
+        <div className={`rounded-[32px] border ${theme.border} bg-slate-900/40 flex flex-col p-6 overflow-hidden self-start max-h-[350px]`}>
+          <div className="flex items-center gap-3 mb-4">
+            <Megaphone className={`w-5 h-5 ${theme.accent}`} />
+            <h2 className="text-lg font-bold text-white">Latest Comms</h2>
           </div>
-          <div className="space-y-4 overflow-y-auto pr-2 flex-1">
+          <div className="space-y-3 overflow-y-auto pr-2 flex-1">
             {notifications.map(n => (
               <div key={n.id} className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-2">
                 <div className="flex justify-between items-center">
@@ -161,43 +207,6 @@ const Dashboard: React.FC = () => {
               </div>
             )}
           </div>
-        </div>
-
-        {/* AI Assistant */}
-        <div className={`lg:col-span-2 rounded-[32px] border ${theme.border} bg-slate-900/40 p-8 flex flex-col`}>
-          <div className="flex items-center gap-3 mb-6">
-            <Sparkles className={`w-6 h-6 ${theme.accent}`} />
-            <h2 className="text-xl font-bold text-white">AI Subject Co-Pilot</h2>
-          </div>
-          
-          <div className="flex-1 bg-black/40 rounded-2xl border border-white/5 p-6 mb-4 min-h-[120px] max-h-[250px] overflow-y-auto">
-            {aiResponse ? (
-              <div className="prose prose-invert prose-sm text-slate-300">
-                {aiResponse}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-4">
-                <Terminal className="w-10 h-10 opacity-20" />
-                <p className="text-sm font-mono uppercase tracking-widest opacity-40">Ready for terminal query...</p>
-              </div>
-            )}
-          </div>
-
-          <form onSubmit={handleAskAi} className="relative">
-            <input 
-              type="text"
-              value={aiPrompt}
-              onChange={(e) => setAiPrompt(e.target.value)}
-              placeholder={`Ask anything about ${selectedSubject.toLowerCase()} principles...`}
-              className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 pr-16 text-sm text-white focus:outline-none focus:border-slate-600"
-            />
-            <button 
-              disabled={isLoadingAi}
-              className={`absolute right-2 top-2 bottom-2 w-12 rounded-xl flex items-center justify-center transition-all ${isLoadingAi ? 'bg-slate-800 text-slate-500' : theme.button}`}
-            >
-              {isLoadingAi ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="w-5 h-5" />}
-            </button>
-          </form>
         </div>
       </div>
 

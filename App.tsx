@@ -8,10 +8,15 @@ import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
 import NotesPage from './pages/NotesPage';
+import MediaPage from './pages/MediaPage';
 import TestsPage from './pages/TestsPage';
 import ScoresPage from './pages/ScoresPage';
 import ProfilePage from './pages/ProfilePage';
 import StudentsPage from './pages/StudentsPage';
+import TestAttemptsPage from './pages/TestAttemptsPage';
+import NotAttemptedTestsPage from './pages/NotAttemptedTestsPage';
+import WeakerStudentsPage from './pages/WeakerStudentsPage';
+import AIPage from './pages/AIPage';
 import Layout from './components/Layout';
 
 const App: React.FC = () => {
@@ -76,9 +81,14 @@ const App: React.FC = () => {
           <Route element={<Layout />}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/documents" element={<NotesPage />} />
+            <Route path="/media" element={<MediaPage />} />
             <Route path="/tests" element={<TestsPage />} />
             <Route path="/scores" element={<ScoresPage />} />
+            <Route path="/test-attempts" element={<TestAttemptsPage />} />
+            <Route path="/not-attempted" element={<NotAttemptedTestsPage />} />
+            <Route path="/weaker-students" element={<WeakerStudentsPage />} />
             <Route path="/students" element={<StudentsPage />} />
+            <Route path="/ai" element={<AIPage />} />
             <Route path="/profile" element={<ProfilePage />} />
           </Route>
 

@@ -25,10 +25,44 @@ export const supabaseService = {
         .from('users')
         .upsert(user, { onConflict: 'id' });
       
-      if (error) throw error;
+      if (error) {
+        // If the mobile_number column is missing, try without it to prevent crashing
+        const isMissingColumn = 
+          (error.message?.includes('mobile_number') && error.message?.includes('schema cache')) ||
+          error.message?.includes('column users.mobile_number does not exist') ||
+          error.code === '42703';
+          
+        if (isMissingColumn) {
+          console.warn("mobile_number column missing. Retrying without it. Please run the SQL migration.");
+          const { mobile_number, ...userWithoutMobile } = user;
+          const { error: retryError } = await supabase
+            .from('users')
+            .upsert(userWithoutMobile, { onConflict: 'id' });
+            
+          if (retryError) throw retryError;
+          return;
+        }
+        throw error;
+      }
     } catch (error) {
       logError('addUser', error);
       throw error;
+    }
+  },
+
+  async getUserCount(subject: Subject): Promise<number> {
+    try {
+      const { count, error } = await supabase
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .eq('subject', subject)
+        .eq('role', 'STUDENT');
+      
+      if (error) throw error;
+      return count || 0;
+    } catch (error) {
+      logError('getUserCount', error);
+      return 0;
     }
   },
 
@@ -87,7 +121,13 @@ export const supabaseService = {
         .order('createdAt', { ascending: false });
       
       if (error) throw error;
-      return data || [];
+      
+      // Map totalQuestionsToAttempt back to timeLimit
+      return (data || []).map(test => {
+        const mappedTest = { ...test, timeLimit: test.totalQuestionsToAttempt };
+        delete mappedTest.totalQuestionsToAttempt;
+        return mappedTest;
+      });
     } catch (error) {
       logError('getTests', error);
       return [];
@@ -96,9 +136,16 @@ export const supabaseService = {
 
   async addTest(test: Test): Promise<void> {
     try {
+      // Map timeLimit to totalQuestionsToAttempt to match the database schema
+      const dbTest = {
+        ...test,
+        totalQuestionsToAttempt: test.timeLimit
+      };
+      delete (dbTest as any).timeLimit;
+
       const { error } = await supabase
         .from('tests')
-        .insert([test]);
+        .insert([dbTest]);
       
       if (error) throw error;
     } catch (error) {
@@ -149,6 +196,31 @@ export const supabaseService = {
     } catch (error) {
       logError('addResult', error);
       throw error;
+    }
+  },
+
+  async deleteResult(id: string): Promise<boolean> {
+    try {
+      const { data, error } = await supabase.from('results').delete().eq('id', id).select();
+      if (error) throw error;
+      return !!data && data.length > 0;
+    } catch (error) {
+      logError('deleteResult', error);
+      return false;
+    }
+  },
+
+  async deleteUser(id: string): Promise<boolean> {
+    try {
+      // Also delete associated results to clean up dashboard
+      await supabase.from('results').delete().eq('studentId', id);
+      
+      const { data, error } = await supabase.from('users').delete().eq('id', id).select();
+      if (error) throw error;
+      return !!data && data.length > 0;
+    } catch (error) {
+      logError('deleteUser', error);
+      return false;
     }
   },
 

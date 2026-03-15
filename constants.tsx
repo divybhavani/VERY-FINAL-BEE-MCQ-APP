@@ -10,7 +10,12 @@ import {
   Users, 
   BarChart3, 
   UserCircle, 
-  LogOut 
+  LogOut,
+  ClipboardList,
+  Image as ImageIcon,
+  Sparkles,
+  UserX,
+  AlertTriangle
 } from 'lucide-react';
 
 export const THEMES = {
@@ -41,9 +46,14 @@ export const THEMES = {
 export const MENU_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['STUDENT', 'ADMIN'] },
   { id: 'documents', label: 'Notes', icon: FileText, roles: ['STUDENT', 'ADMIN'] },
+  { id: 'media', label: 'Images & Video', icon: ImageIcon, roles: ['STUDENT', 'ADMIN'] },
   { id: 'tests', label: 'Tests', icon: PenTool, roles: ['STUDENT', 'ADMIN'] },
   { id: 'scores', label: 'Performance', icon: BarChart3, roles: ['STUDENT', 'ADMIN'] },
+  { id: 'test-attempts', label: 'Test Attempts', icon: ClipboardList, roles: ['ADMIN'] },
+  { id: 'not-attempted', label: 'Not Attempted Tests', icon: UserX, roles: ['ADMIN'] },
   { id: 'students', label: 'Students', icon: Users, roles: ['ADMIN'] },
+  { id: 'weaker-students', label: 'Weaker Students', icon: AlertTriangle, roles: ['ADMIN'] },
+  { id: 'ai', label: 'AI Co-Pilot', icon: Sparkles, roles: ['STUDENT', 'ADMIN'] },
   { id: 'profile', label: 'Profile', icon: UserCircle, roles: ['STUDENT', 'ADMIN'] },
   { id: 'logout', label: 'Logout', icon: LogOut, roles: ['STUDENT', 'ADMIN'] },
 ];
