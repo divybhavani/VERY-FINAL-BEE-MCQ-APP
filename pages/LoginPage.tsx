@@ -69,7 +69,11 @@ const LoginPage: React.FC = () => {
 
         if (mobileError && !isMissingColumn) {
           setIsAuthenticating(false);
-          setError(`Database error: ${mobileError.message || JSON.stringify(mobileError)}`);
+          let errMsg = mobileError.message || JSON.stringify(mobileError);
+          if (errMsg.includes('Failed to fetch')) {
+             errMsg = 'Failed to fetch (CORS/Network error). If using Supabase, make sure you have run the database schema SQL to create the tables.';
+          }
+          setError(`Database error: ${errMsg}`);
           return;
         }
 
@@ -82,7 +86,11 @@ const LoginPage: React.FC = () => {
 
         if (idError) {
           setIsAuthenticating(false);
-          setError(`Database error: ${idError.message || JSON.stringify(idError)}`);
+          let errMsg = idError.message || JSON.stringify(idError);
+          if (errMsg.includes('Failed to fetch')) {
+             errMsg = 'Failed to fetch (CORS/Network error). Please run the SQL schema in your Supabase dashboard.';
+          }
+          setError(`Database error: ${errMsg}`);
           return;
         }
 

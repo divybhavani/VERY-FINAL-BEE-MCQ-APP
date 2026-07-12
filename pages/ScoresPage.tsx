@@ -170,7 +170,14 @@ const ScoresPage: React.FC = () => {
                 <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold border shrink-0 ${attempt.isCorrect ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
                   {idx + 1}
                 </span>
-                <p className="text-lg text-white font-medium">{attempt.questionText}</p>
+                <div className="flex-1">
+                  <p className="text-lg text-white font-medium">{attempt.questionText}</p>
+                  {attempt.imageUrl && (
+                    <div className="mt-4">
+                      <img src={attempt.imageUrl} alt="Question Image" className="max-w-full h-auto rounded-xl border border-white/10 max-h-64 object-contain bg-black/20" />
+                    </div>
+                  )}
+                </div>
               </div>
               
               {/* Bloom's Level Indicator */}

@@ -1,4 +1,3 @@
-
 import { supabase, logError } from './supabase';
 import { Subject, User, AcademicNote, Test, Result, Notification } from '../types';
 
@@ -12,7 +11,14 @@ export const supabaseService = {
         .eq('subject', subject);
       
       if (error) throw error;
-      return data || [];
+      
+      return (data || []).map((dbUser: any) => {
+        const { roll, ...rest } = dbUser;
+        return {
+          ...rest,
+          rollNumber: roll
+        } as User;
+      });
     } catch (error) {
       logError('getUsers', error);
       return [];
@@ -21,9 +27,15 @@ export const supabaseService = {
 
   async addUser(user: User): Promise<void> {
     try {
+      const { rollNumber, ...restUser } = user;
+      const dbUser = {
+        ...restUser,
+        roll: rollNumber
+      };
+
       const { error } = await supabase
         .from('users')
-        .upsert(user, { onConflict: 'id' });
+        .upsert(dbUser, { onConflict: 'id' });
       
       if (error) {
         // If the mobile_number column is missing, try without it to prevent crashing
@@ -34,7 +46,7 @@ export const supabaseService = {
           
         if (isMissingColumn) {
           console.warn("mobile_number column missing. Retrying without it. Please run the SQL migration.");
-          const { mobile_number, ...userWithoutMobile } = user;
+          const { mobile_number, ...userWithoutMobile } = dbUser;
           const { error: retryError } = await supabase
             .from('users')
             .upsert(userWithoutMobile, { onConflict: 'id' });
@@ -272,9 +284,9 @@ export const supabaseService = {
         .getPublicUrl(filePath);
 
       return data.publicUrl;
-    } catch (error) {
+    } catch (error: any) {
       logError('uploadFile', error);
-      throw error;
+      throw new Error(error.message || 'Storage upload failed. Please ensure Supabase Storage is configured.');
     }
   }
 };

@@ -42,6 +42,7 @@ export interface Question {
   id: string;
   testId: string;
   question: string;
+  image_url?: string;
   bloom_level?: string;
   option_a: string;
   option_b: string;
@@ -64,6 +65,7 @@ export interface Test {
 export interface QuestionAttempt {
   questionId: string;
   questionText: string;
+  imageUrl?: string;
   selectedAnswer: string;
   correctAnswer: string;
   isCorrect: boolean;

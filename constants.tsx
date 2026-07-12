@@ -60,5 +60,5 @@ export const MENU_ITEMS = [
 
 export const ADMIN_CREDENTIALS = {
   id: 'mkjd',
-  password: 'mkjd6925'
+  password: 'dcvoltzmkjd123'
 };

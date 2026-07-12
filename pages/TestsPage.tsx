@@ -128,10 +128,13 @@ const TestsPage: React.FC = () => {
           const qText = getRowValue(row, ['Question', 'Q', 'Question Text']);
           if (!qText) return;
 
+          const imageUrl = getRowValue(row, ['Image URL', 'Image', 'Image Link']);
+
           questions.push({
             id: Math.random().toString(36).substr(2, 9),
             testId,
             question: qText,
+            image_url: imageUrl ? imageUrl : undefined,
             option_a: getRowValue(row, ['Option A', 'A', 'Choice A']),
             option_b: getRowValue(row, ['Option B', 'B', 'Choice B']),
             option_c: getRowValue(row, ['Option C', 'C', 'Choice C']),
@@ -142,7 +145,7 @@ const TestsPage: React.FC = () => {
         });
 
         if (questions.length === 0) {
-          alert("No valid questions found. Please check your Excel headers: Question, Option A, Option B, Option C, Option D, Correct Answer, Bloom's Le");
+          alert("No valid questions found. Please check your Excel headers: Question, Image URL, Option A, Option B, Option C, Option D, Correct Answer, Bloom's Le");
           return;
         }
 
@@ -203,6 +206,7 @@ const TestsPage: React.FC = () => {
       return {
         questionId: q.id,
         questionText: q.question,
+        imageUrl: q.image_url,
         selectedAnswer: selected,
         correctAnswer: q.correct_answer,
         isCorrect,
@@ -324,7 +328,14 @@ const TestsPage: React.FC = () => {
                       <span className={`w-12 h-8 rounded-lg flex items-center justify-center text-xs font-bold border shrink-0 ${attempt.isCorrect ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
                         Q{idx + 1}
                       </span>
+                      <div className="flex-1">
                       <p className="text-lg text-white font-medium">{attempt.questionText}</p>
+                      {attempt.imageUrl && (
+                        <div className="mt-4">
+                          <img src={attempt.imageUrl} alt="Question Image" className="max-w-full h-auto rounded-xl border border-white/10 max-h-64 object-contain bg-black/20" />
+                        </div>
+                      )}
+                    </div>
                     </div>
                     
                     {(() => {
@@ -466,7 +477,14 @@ const TestsPage: React.FC = () => {
                     <span className={`w-12 h-8 rounded-lg bg-white/5 flex items-center justify-center text-xs font-bold ${theme.accent} border border-white/5 shrink-0`}>
                       Q{idx + 1}
                     </span>
-                    <p className="text-lg text-white font-medium">{q.question}</p>
+                    <div className="flex-1">
+                      <p className="text-lg text-white font-medium">{q.question}</p>
+                      {q.image_url && (
+                        <div className="mt-4">
+                          <img src={q.image_url} alt="Question Image" className="max-w-full h-auto rounded-xl border border-white/10 max-h-64 object-contain bg-black/20" />
+                        </div>
+                      )}
+                    </div>
                   </div>
                   
                   <div className="space-y-3">
