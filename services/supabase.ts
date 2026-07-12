@@ -10,5 +10,10 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export const logError = (context: string, error: any) => {
-  console.error(`[Supabase Error][${context}]:`, error.message || error);
+  const msg = error.message || error;
+  if (typeof msg === 'string' && msg.includes('Failed to fetch')) {
+    console.warn(`[Supabase Network Issue][${context}]: Failed to fetch. This may be due to an adblocker, VPN, or network issue.`);
+  } else {
+    console.error(`[Supabase Error][${context}]:`, msg);
+  }
 };

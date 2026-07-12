@@ -20,6 +20,9 @@ const MediaPage: React.FC = () => {
   const [type, setType] = useState<'IMAGE' | 'VIDEO'>('IMAGE');
   const [file, setFile] = useState<File | null>(null);
   const [uploadDivision, setUploadDivision] = useState<Division | 'ALL'>('ALL');
+  const [inputMethod, setInputMethod] = useState<'FILE' | 'URL'>('URL');
+  const [externalUrl, setExternalUrl] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   useEffect(() => {
     const fetchMedia = async () => {
@@ -57,12 +60,19 @@ const MediaPage: React.FC = () => {
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title) return alert("Enter media title");
-    if (!file) return alert("Please select a file to upload");
+    if (inputMethod === 'FILE' && !file) return alert("Please select a file to upload");
+    if (inputMethod === 'URL' && !externalUrl) return alert("Please enter a valid URL");
     
     setIsSubmitting(true);
+    setUploadProgress(0);
     
     try {
-      const publicUrl = await supabaseService.uploadFile(file);
+      let publicUrl = externalUrl;
+      if (inputMethod === 'FILE' && file) {
+        publicUrl = await supabaseService.uploadFile(file, 'academic-assets', (progress) => {
+          setUploadProgress(progress);
+        });
+      }
 
       const newMedia: AcademicNote = {
         id: Math.random().toString(36).substr(2, 9),
@@ -90,6 +100,8 @@ const MediaPage: React.FC = () => {
       setMedia(updatedDocs.filter(d => d.type === 'IMAGE' || d.type === 'VIDEO'));
       setTitle('');
       setFile(null);
+      setExternalUrl('');
+      setUploadProgress(0);
       setIsUploading(false);
       alert("Media uploaded successfully!");
     } catch (error: any) {
@@ -97,6 +109,7 @@ const MediaPage: React.FC = () => {
       alert(`Failed to upload media: ${error.message || 'Check your storage bucket permissions.'}`);
     } finally {
       setIsSubmitting(false);
+      setUploadProgress(0);
     }
   };
 
@@ -189,24 +202,69 @@ const MediaPage: React.FC = () => {
                   ))}
                 </div>
               </div>
-              <div 
-                onClick={() => document.getElementById('media-upload')?.click()}
-                className="border-2 border-dashed border-slate-800 rounded-2xl p-8 text-center bg-black/40 cursor-pointer hover:border-slate-600 transition-colors"
-              >
-                <input 
-                  id="media-upload"
-                  type="file" 
-                  className="hidden" 
-                  accept="image/*,video/*"
-                  onChange={handleFileChange}
-                />
-                <FileType className={`w-10 h-10 mx-auto mb-2 ${file ? theme.accent : 'text-slate-600'}`} />
-                {file ? (
-                  <p className="text-xs text-white font-medium truncate">{file.name}</p>
-                ) : (
-                  <p className="text-xs text-slate-500">Click to select Image or Video</p>
-                )}
+              <div>
+                <label className="block text-xs font-mono text-slate-500 uppercase mb-2">Input Method</label>
+                <div className="flex gap-2 mb-4">
+                  <button type="button" onClick={() => setInputMethod('URL')} className={`flex-1 py-2 rounded-lg border text-[10px] font-bold transition-all ${inputMethod === 'URL' ? 'bg-white/10 border-white/20 text-white' : 'bg-transparent border-slate-800 text-slate-500'}`}>DIRECT URL</button>
+                  <button type="button" onClick={() => setInputMethod('FILE')} className={`flex-1 py-2 rounded-lg border text-[10px] font-bold transition-all ${inputMethod === 'FILE' ? 'bg-white/10 border-white/20 text-white' : 'bg-transparent border-slate-800 text-slate-500'}`}>UPLOAD FILE</button>
+                </div>
               </div>
+              
+              {inputMethod === 'FILE' ? (
+                <div 
+                  onClick={() => document.getElementById('media-upload')?.click()}
+                  className="border-2 border-dashed border-slate-800 rounded-2xl p-8 text-center bg-black/40 cursor-pointer hover:border-slate-600 transition-colors"
+                >
+                  <input 
+                    id="media-upload"
+                    type="file" 
+                    className="hidden" 
+                    accept="image/*,video/*"
+                    onChange={handleFileChange}
+                  />
+                  <FileType className={`w-10 h-10 mx-auto mb-2 ${file ? theme.accent : 'text-slate-600'}`} />
+                  {file ? (
+                    <p className="text-xs text-white font-medium truncate">{file.name}</p>
+                  ) : (
+                    <p className="text-xs text-slate-500">Click to select Image or Video (Small only)</p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-mono text-slate-500 uppercase mb-1">Media URL</label>
+                    <input 
+                      type="url" 
+                      value={externalUrl}
+                      onChange={(e) => setExternalUrl(e.target.value)}
+                      className="w-full bg-black border border-slate-800 rounded-xl px-4 py-3 text-sm text-white"
+                      placeholder="https://example.com/image.png"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-mono text-slate-500 uppercase mb-1">Media Type</label>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setType('IMAGE')} className={`flex-1 py-2 rounded-lg border text-[10px] font-bold transition-all ${type === 'IMAGE' ? 'bg-white/10 border-white/20 text-white' : 'bg-transparent border-slate-800 text-slate-500'}`}>IMAGE</button>
+                      <button type="button" onClick={() => setType('VIDEO')} className={`flex-1 py-2 rounded-lg border text-[10px] font-bold transition-all ${type === 'VIDEO' ? 'bg-white/10 border-white/20 text-white' : 'bg-transparent border-slate-800 text-slate-500'}`}>VIDEO</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {isSubmitting && inputMethod === 'FILE' && (
+                <div className="mt-4">
+                  <div className="flex justify-between text-xs text-slate-400 mb-1 font-mono uppercase">
+                    <span>Uploading...</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                    <div 
+                      className={`h-full ${theme.accent} transition-all duration-300 ease-out`}
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
               <button 
                 type="submit" 
                 disabled={isSubmitting}

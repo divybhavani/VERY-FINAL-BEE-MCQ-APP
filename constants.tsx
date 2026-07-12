@@ -53,7 +53,6 @@ export const MENU_ITEMS = [
   { id: 'not-attempted', label: 'Not Attempted Tests', icon: UserX, roles: ['ADMIN'] },
   { id: 'students', label: 'Students', icon: Users, roles: ['ADMIN'] },
   { id: 'weaker-students', label: 'Weaker Students', icon: AlertTriangle, roles: ['ADMIN'] },
-  { id: 'ai', label: 'AI Co-Pilot', icon: Sparkles, roles: ['STUDENT', 'ADMIN'] },
   { id: 'profile', label: 'Profile', icon: UserCircle, roles: ['STUDENT', 'ADMIN'] },
   { id: 'logout', label: 'Logout', icon: LogOut, roles: ['STUDENT', 'ADMIN'] },
 ];

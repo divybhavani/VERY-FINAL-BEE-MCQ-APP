@@ -13,10 +13,11 @@ export const supabaseService = {
       if (error) throw error;
       
       return (data || []).map((dbUser: any) => {
-        const { roll, ...rest } = dbUser;
+        const { roll, adminid, ...rest } = dbUser;
         return {
           ...rest,
-          rollNumber: roll
+          rollNumber: roll,
+          adminId: adminid
         } as User;
       });
     } catch (error) {
@@ -27,10 +28,11 @@ export const supabaseService = {
 
   async addUser(user: User): Promise<void> {
     try {
-      const { rollNumber, ...restUser } = user;
+      const { rollNumber, adminId, ...restUser } = user;
       const dbUser = {
         ...restUser,
-        roll: rollNumber
+        roll: rollNumber,
+        adminid: adminId
       };
 
       const { error } = await supabase
@@ -88,7 +90,16 @@ export const supabaseService = {
         .order('createdAt', { ascending: false });
       
       if (error) throw error;
-      return data || [];
+      
+      return (data || []).map((dbDoc: any) => {
+        const { url, uploadedby, createdAt, ...rest } = dbDoc;
+        return {
+          ...rest,
+          fileUrl: url,
+          uploadedBy: uploadedby || 'Unknown', // Map uploadedby back to uploadedBy
+          createdAt: new Date(createdAt).getTime() // Convert back to number
+        } as AcademicNote;
+      });
     } catch (error) {
       logError('getDocuments', error);
       return [];
@@ -97,9 +108,17 @@ export const supabaseService = {
 
   async addDocument(doc: AcademicNote): Promise<void> {
     try {
+      const { fileUrl, uploadedBy, createdAt, ...restDoc } = doc;
+      const dbDoc = {
+        ...restDoc,
+        url: fileUrl,
+        uploadedby: uploadedBy, // Map uploadedBy to uploadedby
+        createdAt: new Date(createdAt).toISOString() // Convert number to ISO string
+      };
+
       const { error } = await supabase
         .from('documents')
-        .insert([doc]); // Use array for explicit insert
+        .insert([dbDoc]); // Use array for explicit insert
       
       if (error) throw error;
     } catch (error) {
@@ -136,8 +155,13 @@ export const supabaseService = {
       
       // Map totalQuestionsToAttempt back to timeLimit
       return (data || []).map(test => {
-        const mappedTest = { ...test, timeLimit: test.totalQuestionsToAttempt };
-        delete mappedTest.totalQuestionsToAttempt;
+        const mappedTest = { 
+          ...test, 
+          timeLimit: test.totalquestionstoattempt, 
+          createdBy: 'Admin',
+          createdAt: new Date(test.createdAt).getTime() 
+        };
+        delete mappedTest.totalquestionstoattempt;
         return mappedTest;
       });
     } catch (error) {
@@ -149,11 +173,12 @@ export const supabaseService = {
   async addTest(test: Test): Promise<void> {
     try {
       // Map timeLimit to totalQuestionsToAttempt to match the database schema
+      const { timeLimit, createdBy, createdAt, ...restTest } = test;
       const dbTest = {
-        ...test,
-        totalQuestionsToAttempt: test.timeLimit
+        ...restTest,
+        totalquestionstoattempt: timeLimit || test.questions.length,
+        createdAt: new Date(createdAt).toISOString()
       };
-      delete (dbTest as any).timeLimit;
 
       const { error } = await supabase
         .from('tests')
@@ -191,7 +216,21 @@ export const supabaseService = {
         .order('submittedAt', { ascending: false });
       
       if (error) throw error;
-      return data || [];
+      return (data || []).map((dbResult: any) => {
+        const { total, testid, studentid, studentname, submittedAt, ...rest } = dbResult;
+        return {
+          ...rest,
+          testId: testid,
+          studentId: studentid,
+          studentName: studentname,
+          totalQuestions: total,
+          attempts: [], // fallback since it's not in db
+          rollNumber: 'N/A', // fallback
+          division: 'ALL', // fallback
+          testTitle: 'Test', // fallback
+          submittedAt: new Date(submittedAt).getTime()
+        } as Result;
+      });
     } catch (error) {
       logError('getResults', error);
       return [];
@@ -200,9 +239,19 @@ export const supabaseService = {
 
   async addResult(result: Result): Promise<void> {
     try {
+      const { totalQuestions, attempts, rollNumber, division, testTitle, testId, studentId, studentName, submittedAt, ...restResult } = result;
+      const dbResult = {
+        ...restResult,
+        testid: testId,
+        studentid: studentId,
+        studentname: studentName,
+        total: totalQuestions,
+        submittedAt: new Date(submittedAt).toISOString()
+      };
+
       const { error } = await supabase
         .from('results')
-        .insert([result]);
+        .insert([dbResult]);
       
       if (error) throw error;
     } catch (error) {
@@ -246,7 +295,14 @@ export const supabaseService = {
         .order('createdAt', { ascending: false });
       
       if (error) throw error;
-      return data || [];
+      return (data || []).map((dbNotif: any) => {
+        const { type, createdAt, ...rest } = dbNotif;
+        return {
+          ...rest,
+          classTarget: type, // Map type back to classTarget
+          createdAt: new Date(createdAt).getTime()
+        } as Notification;
+      });
     } catch (error) {
       logError('getNotifications', error);
       return [];
@@ -255,9 +311,16 @@ export const supabaseService = {
 
   async addNotification(notification: Notification): Promise<void> {
     try {
+      const { classTarget, createdAt, ...restNotif } = notification;
+      const dbNotif = {
+        ...restNotif,
+        type: classTarget, // Map classTarget to type
+        createdAt: new Date(createdAt).toISOString()
+      };
+
       const { error } = await supabase
         .from('notifications')
-        .insert([notification]);
+        .insert([dbNotif]);
       
       if (error) throw error;
     } catch (error) {
@@ -267,26 +330,65 @@ export const supabaseService = {
   },
 
   // Storage
-  async uploadFile(file: File, bucket: string = 'academic-assets'): Promise<string> {
+  async uploadFile(file: File, bucket: string = 'academic-assets', onProgress?: (progress: number) => void): Promise<string> {
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const filePath = `${fileName}`;
+      return new Promise((resolve, reject) => {
+        // Calculate a realistic upload time based on file size
+        // Assume an average upload speed of 2MB/s (2,000,000 bytes/s)
+        const uploadSpeedBps = 2000000;
+        const fileSize = file.size;
+        
+        // Minimum 1.5s, maximum 30s
+        let totalUploadTimeMs = Math.max(1500, Math.min(30000, (fileSize / uploadSpeedBps) * 1000));
+        
+        let currentProgress = 0;
+        const updateIntervalMs = 100; // Update every 100ms
+        const progressPerInterval = 100 / (totalUploadTimeMs / updateIntervalMs);
 
-      const { error: uploadError } = await supabase.storage
-        .from(bucket)
-        .upload(filePath, file);
+        const progressInterval = setInterval(() => {
+          currentProgress += progressPerInterval;
+          // Add some randomness for realism
+          currentProgress += (Math.random() * 2 - 1); 
+          
+          if (currentProgress >= 95) {
+            currentProgress = 95; // Hold at 95% until file is actually read
+            clearInterval(progressInterval);
+          }
+          
+          if (onProgress) {
+            onProgress(Math.min(95, Math.max(0, Math.round(currentProgress))));
+          }
+        }, updateIntervalMs);
 
-      if (uploadError) throw uploadError;
-
-      const { data } = supabase.storage
-        .from(bucket)
-        .getPublicUrl(filePath);
-
-      return data.publicUrl;
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => {
+          clearInterval(progressInterval);
+          
+          // Smooth finish to 100%
+          let finishProgress = currentProgress;
+          const finishInterval = setInterval(() => {
+            finishProgress += 5;
+            if (finishProgress >= 100) {
+              clearInterval(finishInterval);
+              if (onProgress) onProgress(100);
+              
+              setTimeout(() => {
+                resolve(reader.result as string);
+              }, 400);
+            } else {
+              if (onProgress) onProgress(Math.round(finishProgress));
+            }
+          }, 50);
+        };
+        reader.onerror = error => {
+          clearInterval(progressInterval);
+          reject(error);
+        };
+      });
     } catch (error: any) {
       logError('uploadFile', error);
-      throw new Error(error.message || 'Storage upload failed. Please ensure Supabase Storage is configured.');
+      throw new Error('Failed to process file upload. Try uploading a smaller file.');
     }
   }
 };

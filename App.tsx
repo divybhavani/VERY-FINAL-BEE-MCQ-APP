@@ -16,7 +16,6 @@ import StudentsPage from './pages/StudentsPage';
 import TestAttemptsPage from './pages/TestAttemptsPage';
 import NotAttemptedTestsPage from './pages/NotAttemptedTestsPage';
 import WeakerStudentsPage from './pages/WeakerStudentsPage';
-import AIPage from './pages/AIPage';
 import Layout from './components/Layout';
 
 const App: React.FC = () => {
@@ -88,7 +87,6 @@ const App: React.FC = () => {
             <Route path="/not-attempted" element={<NotAttemptedTestsPage />} />
             <Route path="/weaker-students" element={<WeakerStudentsPage />} />
             <Route path="/students" element={<StudentsPage />} />
-            <Route path="/ai" element={<AIPage />} />
             <Route path="/profile" element={<ProfilePage />} />
           </Route>
 
